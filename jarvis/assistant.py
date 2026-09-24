@@ -11,8 +11,10 @@ import time
 
 from .brain import Brain
 from .context import ToolContext
-from .llm import LLMError, OllamaClient
+from .jobs import JobManager
+from .llm import LLMError, make_llm
 from .memory import Memory
+from .skills import SKILL_CLASSES, close_all, get_skill
 from .tools import ToolRegistry
 from .tools.control import stop_auto_scroll
 from .tools.system import os_description
@@ -47,7 +49,8 @@ class Assistant:
         self.cfg = config
         self.name = config.assistant_name
         self.voice_input = voice_input
-        self.llm = OllamaClient.from_config(config.llm)
+        self.llm = self._make_brain()
+        self.code_llm = self._make_code_brain()
         self.memory = Memory(config.paths.data / "memory.json")
         engine = make_engine(config.tts, config.audio.output_device) if voice_output else SilentEngine
         self.speaker = Speaker(engine)
@@ -55,16 +58,33 @@ class Assistant:
             config, self.llm, self.memory,
             say=self._progress, ask_yes_no=self._ask_yes_no, announce=self._announce,
         )
+        self.ctx.code_llm = self.code_llm
+        self.ctx.jobs = JobManager(self._announce)
         self.tools = ToolRegistry(self.ctx)
+        apps = [get_skill(config, name).title for name in SKILL_CLASSES if name in self.tools.names()]
         self.brain = Brain(
             config, self.llm, self.tools, self.memory, os_description(),
             speak=self.speaker.say, show=self._show, on_tool=self._on_tool,
+            jobs=self.ctx.jobs, apps=apps,
         )
         self.mic = None
         self.stt = None
         self.wake = None
         self._line_open = False
         self._print_lock = threading.RLock()
+
+    # ------------------------------------------------------------------ brains
+    def _make_brain(self):
+        c = self.cfg.llm
+        model = c.anthropic_model if c.provider == "anthropic" else c.model
+        return make_llm(c.provider, model, c)
+
+    def _make_code_brain(self):
+        c, s = self.cfg.llm, self.cfg.skills
+        provider = c.provider if s.code_provider in ("same", "", None) else s.code_provider
+        if provider == "anthropic":
+            return make_llm("anthropic", c.anthropic_model, c, effort=s.code_effort)
+        return make_llm("ollama", s.code_model or c.model, c)
 
     # ------------------------------------------------------------------ output
     def _show(self, text: str) -> None:
@@ -147,7 +167,7 @@ class Assistant:
         return f"Good {part}, {self.cfg.user_title}. {self.name} is online and at your service."
 
     def check_brain(self) -> None:
-        """Make sure Ollama is running and has the model; exit with help if not."""
+        """Make sure the brains are ready; exit with help if not."""
         try:
             present = self.llm.has_model()
         except LLMError as exc:
@@ -158,6 +178,14 @@ class Assistant:
                 f"    ollama pull {self.llm.model}\n"
                 "or: python -m jarvis --setup"
             )
+        if self.code_llm is not self.llm and not getattr(self.code_llm, "append_only", False):
+            try:
+                if not self.code_llm.has_model():
+                    log.warning("Code model %s isn't downloaded (ollama pull %s); using %s for code.",
+                                self.code_llm.model, self.code_llm.model, self.llm.model)
+                    self.code_llm = self.ctx.code_llm = self.llm
+            except LLMError:
+                self.code_llm = self.ctx.code_llm = self.llm
         # Load the model into memory in the background so the first answer is quick.
         threading.Thread(target=self._warm_up, daemon=True).start()
 
@@ -183,6 +211,7 @@ class Assistant:
                 self.say("Stopped scrolling.")
             return "handled"
         if cmd in RESET_WORDS:
+            self.save_conversation()
             self.brain.reset()
             self.say("Fresh start. What can I do for you?")
             return "handled"
@@ -212,6 +241,23 @@ class Assistant:
             print(f"{DIM}  (interrupted){RESET_COLOR}")
             self.brain.history.append({"role": "assistant", "content": "(interrupted)"})
 
+    def save_conversation(self) -> None:
+        """Remember the gist of this conversation for next time."""
+        if not self.cfg.llm.remember_conversations:
+            return
+        try:
+            summary = self.brain.summarize()
+        except Exception as exc:  # noqa: BLE001 - never lose the exit over this
+            log.debug("summary failed: %s", exc)
+            return
+        if summary:
+            self.memory.add_episode(dt.datetime.now().strftime("%d %b %Y"), summary)
+
+    def shutdown(self) -> None:
+        self.speaker.wait()
+        self.save_conversation()
+        close_all()
+
     # ---------------------------------------------------------------- run modes
     def run_text(self) -> None:
         self.check_brain()
@@ -231,7 +277,7 @@ class Assistant:
                 break
             if result is None:
                 self.respond(text)
-        self.speaker.wait()
+        self.shutdown()
 
     def _init_voice(self) -> None:
         from .audio import Microphone
@@ -296,6 +342,7 @@ class Assistant:
                 except KeyboardInterrupt:
                     self.speaker.stop()
                     self._end_line()
+        self.shutdown()
 
     def _conversation(self, command: str, follow_up: float) -> str | None:
         """Handle a request, then keep listening briefly for follow-ups."""

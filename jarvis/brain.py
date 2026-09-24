@@ -8,39 +8,73 @@ import logging
 import re
 from typing import Callable
 
+from .llm import strip_think
 from .speech_text import SentenceSplitter
 
 log = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are {name}, a personal AI assistant living on the user's computer ({os}), \
-modelled on J.A.R.V.I.S. from Iron Man. You are calm, capable, loyal and quietly witty, \
-with a touch of dry British humour. Address the user as "{title}".
+You are {name}, the user's personal AI assistant, living on their computer ({os}). \
+Think J.A.R.V.I.S. from Iron Man: brilliant, calm, loyal and quietly witty, with dry \
+British humour, and genuinely interested in whatever the user is working on.
 
-Your replies are spoken aloud by a voice, so:
-- Keep them short: one to three sentences unless asked for more detail.
-- Never use Markdown, bullet lists, emoji, code blocks or URLs in replies.
-- Write numbers, times and symbols the way they are said out loud.
+How you talk
+- This is a spoken conversation between two people. Talk the way a clever, warm friend \
+would: natural, direct, sometimes playful. React to what the user says before answering, \
+ask a short follow-up question when it helps, and give your honest opinion when asked. \
+Remember what was said earlier and in past conversations, and bring it up when relevant.
+- Keep replies short, usually one to three sentences. Go longer only to explain something \
+the user asked about.
+- Your words are spoken aloud: no Markdown, lists, emoji, code or URLs. Say numbers, \
+units and symbols the way they are spoken.
+- Call the user "{title}" now and then, not in every sentence.
+- Don't lecture, don't pile on disclaimers and never say you're "just an AI".
 
-You control this computer through tools. When the user asks you to do something, \
-call the right tool instead of explaining how to do it; chain several tools for \
-multi-step requests. After acting, confirm briefly in a few words. Never claim you \
-did something unless a tool result says it worked; if a tool reports an error, say \
-so plainly. For anything longer than a short paragraph (abstracts, essays, emails, \
-reports, code) use write_document instead of speaking it.
-
-You run fully offline. Your general knowledge comes from training and stops at your \
-training date, so you do not know today's news, prices or weather.{knowledge_hint} \
-If you don't know something, say so rather than guessing.
+Getting things done
+- You operate this computer through tools. When asked to do something, do it with the \
+right tool instead of explaining how, chaining tools for multi-step requests. Confirm \
+briefly afterwards.
+- Never claim something worked unless a tool said so. If a tool reports an error, say \
+what went wrong in plain words and suggest what to try next.
+- Longer writing (abstracts, essays, emails, reports) goes through write_document; \
+programs and websites through the code tools. Don't read them out.
+{skills}
+Knowledge
+- {knowledge}
+- If you don't know or aren't sure, say so honestly instead of guessing.
 
 Current date and time: {now}.
-What you remember about the user:
+What you know about the user:
 {memory}
+Your past conversations with the user (most recent last):
+{episodes}
+{jobs}"""
+
+SKILLS_PROMPT = """
+Professional applications you can work in: {apps}.
+- To get work done in one of them, call its tool with ONE complete, precise task: every \
+dimension, unit, material, value, name and file the user mentioned, plus sensible \
+defaults for anything missing (and tell the user which defaults you picked). If \
+something critical is missing and has no sensible default, ask one short question first.
+- Break big jobs into steps (sketch, extrude, then fillet; geometry, physics, mesh, then \
+solve) and tell the user how it's going between steps.
+- Use in_background for long renders, simulations and exports so you can keep talking.
+- If the user wants to learn to do it by hand, use how_to and walk them through it one \
+or two steps at a time, waiting for them to say they're done before continuing.
 """
 
-KNOWLEDGE_HINT = (
-    " You have an offline encyclopedia (lookup_encyclopedia): use it to check facts "
-    "about people, places, history and science before answering."
+KNOWLEDGE_LOCAL = ("You run offline, so your knowledge comes from training and stops at "
+                   "your training date: no live news, prices or weather.")
+KNOWLEDGE_CLOUD = ("Your knowledge comes from training and has a cutoff date; you have no "
+                   "live news, prices or weather.")
+KNOWLEDGE_HINT = (" You also have an offline encyclopedia (lookup_encyclopedia): use it to "
+                  "check facts about people, places, history and science.")
+
+SUMMARY_PROMPT = (
+    "Summarise this conversation between {name} and the user in one or two sentences for "
+    "{name}'s long-term memory. Focus on what the user was working on, decisions made, "
+    "anything left unfinished and preferences they showed. Refer to them as \"the user\". "
+    "Plain text, no preamble."
 )
 
 HELD_PREFIXES = ("{", "[", "`", "<tool", "<function")
@@ -125,7 +159,8 @@ def parse_text_tool_calls(content: str, tool_names: list[str]) -> list[dict]:
 class Brain:
     def __init__(self, config, llm, tools, memory, os_name: str,
                  speak: Callable[[str], None], show: Callable[[str], None],
-                 on_tool: Callable[[str, dict, str], None] | None = None) -> None:
+                 on_tool: Callable[[str, dict, str], None] | None = None,
+                 jobs=None, apps: list[str] | None = None) -> None:
         self.config = config
         self.llm = llm
         self.tools = tools
@@ -134,31 +169,63 @@ class Brain:
         self.speak = speak
         self.show = show
         self.on_tool = on_tool or (lambda name, args, result: None)
+        self.jobs = jobs
+        self.apps = apps or []
         self.history: list[dict] = []
 
     def reset(self) -> None:
         self.history.clear()
 
     def system_prompt(self) -> str:
+        names = self.tools.names()
+        knowledge = KNOWLEDGE_CLOUD if getattr(self.llm, "append_only", False) else KNOWLEDGE_LOCAL
+        if "lookup_encyclopedia" in names:
+            knowledge += KNOWLEDGE_HINT
+        skills = SKILLS_PROMPT.format(apps=", ".join(self.apps)) if self.apps else ""
+        jobs = self.jobs.summary() if self.jobs else ""
         return SYSTEM_PROMPT.format(
             name=self.config.assistant_name,
             title=self.config.user_title,
             os=self.os_name,
+            skills=skills,
+            knowledge=knowledge,
             now=dt.datetime.now().strftime("%A %d %B %Y, %I:%M %p"),
             memory=self.memory.as_prompt(),
-            knowledge_hint=KNOWLEDGE_HINT if "lookup_encyclopedia" in self.tools.names() else "",
+            episodes=self.memory.episodes_prompt(),
+            jobs=f"Background jobs:\n{jobs}" if jobs else "",
         )
 
+    def summarize(self) -> str:
+        """One or two sentences about this conversation, for long-term memory."""
+        turns = [m for m in self.history if m["role"] in ("user", "assistant") and m.get("content")]
+        if sum(1 for m in turns if m["role"] == "user") < 2:
+            return ""
+        name = self.config.assistant_name
+        transcript = "\n".join(
+            f"{'User' if m['role'] == 'user' else name}: {m['content'][:600]}" for m in turns[-40:]
+        )
+        result = self.llm.chat(
+            [{"role": "system", "content": SUMMARY_PROMPT.format(name=name)},
+             {"role": "user", "content": transcript}],
+            stream=False,
+        )
+        return strip_think(result.content)
+
     def _context(self, turn_start: int) -> list[dict]:
-        """Recent history, with bulky tool output from earlier turns shortened."""
-        limit = self.config.llm.max_history_messages
+        """Recent history, with bulky tool output from earlier turns shortened.
+
+        Cloud brains get the history untouched (they have a huge context window
+        and replay earlier replies exactly), trimmed only when it gets very long.
+        """
+        append_only = getattr(self.llm, "append_only", False)
+        limit = 400 if append_only else self.config.llm.max_history_messages
         start = max(0, len(self.history) - limit)
         while start < len(self.history) and self.history[start]["role"] != "user":
             start += 1  # never begin mid-exchange
         start = min(start, turn_start)
         msgs = []
         for i, msg in enumerate(self.history[start:], start):
-            if i < turn_start and msg["role"] == "tool" and len(msg["content"]) > 400:
+            if not append_only and i < turn_start and msg["role"] == "tool" and len(msg["content"]) > 400:
                 msg = {**msg, "content": msg["content"][:400] + " ...(shortened)"}
             msgs.append(msg)
         return [{"role": "system", "content": self.system_prompt()}] + msgs
@@ -182,14 +249,20 @@ class Brain:
 
             if not calls:
                 reply = result.content
-                self.history.append({"role": "assistant", "content": reply})
+                message = {"role": "assistant", "content": reply}
+                if result.raw is not None:
+                    message["_anthropic_content"] = result.raw
+                self.history.append(message)
                 return reply
 
-            self.history.append({
+            message = {
                 "role": "assistant",
                 "content": "" if from_text else result.content,
                 "tool_calls": calls,
-            })
+            }
+            if result.raw is not None:
+                message["_anthropic_content"] = result.raw
+            self.history.append(message)
             for call in calls:
                 fn = call.get("function", {})
                 name = fn.get("name", "")
@@ -201,7 +274,10 @@ class Brain:
                         args = {}
                 output = self.tools.call(name, args)
                 self.on_tool(name, args, output)
-                self.history.append({"role": "tool", "content": output, "tool_name": name})
+                tool_msg = {"role": "tool", "content": output, "tool_name": name}
+                if call.get("id"):
+                    tool_msg["tool_call_id"] = call["id"]
+                self.history.append(tool_msg)
 
         reply = "I seem to be going round in circles on that one. Could you rephrase it?"
         self.speak(reply)

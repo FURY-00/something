@@ -4,18 +4,49 @@ assistant_name: Jarvis
 user_title: Sir            # how Jarvis addresses you: Sir, Boss, your name...
 
 llm:
-  # The "brain". Any Ollama model with tool support works. Pick by your RAM:
+  # Which brain holds the conversation:
+  #   ollama    - runs on your laptop, fully offline, free (default)
+  #   anthropic - Claude in the cloud: far smarter at engineering, CAD/CAE scripting and
+  #               code. Needs internet and an API key (set ANTHROPIC_API_KEY). Paid per use.
+  provider: ollama
+  # The local model. Any Ollama model with tool support works. Pick by your RAM:
   #    8 GB RAM  -> qwen2.5:3b     (fast, basic)
   #   16 GB RAM  -> qwen2.5:7b     (good default) or llama3.1:8b
   #   GPU 12 GB+ -> qwen2.5:14b    (noticeably smarter)
   #   GPU 24 GB+ -> qwen2.5:32b    (very capable)
   # After changing it run:  ollama pull <model>
   model: qwen2.5:7b
+  anthropic_model: claude-opus-5
+  anthropic_effort: medium   # low / medium / high: lower answers faster in conversation
   # For "thinking" models (qwen3, gpt-oss, deepseek-r1) set think: false for faster replies.
   think: null
   # Optional: a vision model lets Jarvis look at your screen ("what's on my screen?").
   # e.g. qwen2.5vl:7b, gemma3:4b, llava:7b  (then: ollama pull <model>)
   vision_model: ""
+  remember_conversations: true   # remember the gist of each chat for next time
+
+skills:
+  # The brain that writes scripts for SolidWorks, COMSOL, Ansys, Blender, Canva and code:
+  #   same = follow llm.provider;  ollama = local coder model;  anthropic = Claude (recommended
+  #   for serious engineering work: it knows these APIs far better than a laptop-sized model)
+  code_provider: same
+  code_model: qwen2.5-coder:7b   # local code model (ollama pull qwen2.5-coder:7b); 14b is better
+  code_effort: high              # Claude effort for code: high or xhigh
+  max_attempts: 4                # write -> run -> fix rounds per task
+  # Each application: enabled: auto (use it if installed), true or false
+  blender:
+    enabled: auto
+    executable: ""               # path to blender(.exe) if it isn't found automatically
+  solidworks:
+    enabled: auto                # Windows only
+  comsol:
+    enabled: auto
+    version: ""                  # e.g. "6.2" if several are installed
+  ansys:
+    enabled: auto
+    executable: ""               # path to the MAPDL executable if it isn't found automatically
+  canva:
+    enabled: auto                # needs internet; your browser opens once to sign in
 
 wake_word:
   engine: openwakeword     # openwakeword ("Hey Jarvis"), whisper (just say "Jarvis"), enter (push to talk)
@@ -53,3 +84,4 @@ safety:
 paths:
   documents: ~/Documents/Jarvis
   screenshots: ~/Pictures/Jarvis
+  projects: ~/Documents/Jarvis/Projects   # CAD parts, simulations, renders, websites, code

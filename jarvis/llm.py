@@ -22,6 +22,7 @@ class LLMError(RuntimeError):
 class ChatResult:
     content: str = ""
     tool_calls: list[dict] = field(default_factory=list)
+    raw: object = None  # provider-specific reply, replayed as-is by cloud brains
 
 
 class ThinkFilter:
@@ -160,17 +161,19 @@ class OllamaClient:
         model: str | None = None,
         temperature: float | None = None,
         stream: bool | None = None,
+        num_ctx: int | None = None,
     ) -> ChatResult:
         """Send a chat request. ``on_text`` receives answer text as it streams."""
         stream = self.stream if stream is None else stream
         payload: dict = {
             "model": model or self.model,
-            "messages": messages,
+            # Keys starting with "_" belong to other providers; Ollama doesn't need them.
+            "messages": [{k: v for k, v in m.items() if not k.startswith("_")} for m in messages],
             "stream": stream,
             "keep_alive": self.keep_alive,
             "options": {
                 "temperature": self.temperature if temperature is None else temperature,
-                "num_ctx": self.num_ctx,
+                "num_ctx": num_ctx or self.num_ctx,
             },
         }
         if tools:
@@ -237,3 +240,14 @@ def _error_text(resp: requests.Response) -> str:
     if "not found" in err and "model" in err:
         err += " (download it with: ollama pull <model>)"
     return f"Ollama error {resp.status_code}: {err}"
+
+
+def make_llm(provider: str, model: str, llm_cfg, effort: str | None = None):
+    """Build the chat client for a provider ("ollama" or "anthropic")."""
+    if provider == "anthropic":
+        from .llm_cloud import AnthropicClient
+
+        return AnthropicClient(model=model, effort=effort or llm_cfg.anthropic_effort)
+    client = OllamaClient.from_config(llm_cfg)
+    client.model = model
+    return client

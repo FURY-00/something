@@ -9,6 +9,7 @@ language model. After this, nothing needs the internet.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import shutil
 import sys
 
@@ -87,9 +88,21 @@ def setup_wakeword(cfg) -> bool:
     return True
 
 
+def _code_provider(cfg) -> str:
+    p = cfg.skills.code_provider
+    return cfg.llm.provider if p in ("same", "", None) else p
+
+
 def setup_ollama(cfg) -> bool:
     client = OllamaClient.from_config(cfg.llm)
-    models = [cfg.llm.model] + ([cfg.llm.vision_model] if cfg.llm.vision_model else [])
+    models = []
+    if cfg.llm.provider == "ollama":
+        models.append(cfg.llm.model)
+    if _code_provider(cfg) == "ollama" and cfg.skills.code_model:
+        models.append(cfg.skills.code_model)
+    if cfg.llm.vision_model:
+        models.append(cfg.llm.vision_model)
+    models = list(dict.fromkeys(models))
     for model in models:
         step(f"Language model (ollama '{model}')")
         try:
@@ -130,17 +143,28 @@ def run_check(cfg) -> int:
 
     print(f"Python {sys.version.split()[0]}")
     report("Python 3.10+", sys.version_info >= (3, 10))
-    client = OllamaClient.from_config(cfg.llm)
-    try:
-        models = client.list_models()
-        report("Ollama running", True, cfg.llm.host)
-        report(f"Model {cfg.llm.model}", client.has_model(), "" if client.has_model()
-               else f"run: ollama pull {cfg.llm.model}")
-        if cfg.llm.vision_model:
-            report(f"Vision model {cfg.llm.vision_model}", client.has_model(cfg.llm.vision_model))
-        print(f"       installed models: {', '.join(models) or 'none'}")
-    except LLMError as exc:
-        report("Ollama running", False, str(exc))
+    uses_cloud = "anthropic" in (cfg.llm.provider, _code_provider(cfg))
+    if uses_cloud:
+        import os
+
+        has_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
+        report("Claude API credentials", has_key or importlib.util.find_spec("anthropic") is not None,
+               "ANTHROPIC_API_KEY is set" if has_key else "set ANTHROPIC_API_KEY (or run: ant auth login)")
+    if "ollama" in (cfg.llm.provider, _code_provider(cfg)):
+        client = OllamaClient.from_config(cfg.llm)
+        try:
+            models = client.list_models()
+            report("Ollama running", True, cfg.llm.host)
+            wanted = ([cfg.llm.model] if cfg.llm.provider == "ollama" else []) + (
+                [cfg.skills.code_model] if _code_provider(cfg) == "ollama" else [])
+            for model in dict.fromkeys(wanted):
+                ok = client.has_model(model)
+                report(f"Model {model}", ok, "" if ok else f"run: ollama pull {model}")
+            if cfg.llm.vision_model:
+                report(f"Vision model {cfg.llm.vision_model}", client.has_model(cfg.llm.vision_model))
+            print(f"       installed models: {', '.join(models) or 'none'}")
+        except LLMError as exc:
+            report("Ollama running", False, str(exc))
 
     for module, why in [
         ("faster_whisper", "speech recognition"),
@@ -173,6 +197,15 @@ def run_check(cfg) -> int:
         report("Speakers", True, dev_out["name"])
     except Exception as exc:  # noqa: BLE001
         report("Audio devices", False, str(exc))
+
+    print("\nApplications (skills):")
+    from .skills import SKILL_CLASSES, get_skill
+
+    for name in SKILL_CLASSES:
+        skill = get_skill(cfg, name)
+        reason = skill.detect()
+        mark = "OK" if reason is None else "--"
+        print(f"  [{mark}] {skill.title}" + (f": {reason}" if reason else ""))
 
     print(f"\nModels folder: {MODELS_DIR}")
     print("Everything looks good." if good else "Fix the items marked !! (python -m jarvis --setup "

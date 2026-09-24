@@ -25,6 +25,7 @@ TOOL_MODULES = [
     "jarvis.tools.writing",
     "jarvis.tools.knowledge",
     "jarvis.tools.memory",
+    "jarvis.tools.skills",
 ]
 
 

@@ -12,16 +12,21 @@ class Memory:
         self.path = Path(path)
         self._lock = threading.Lock()
         self.facts: list[str] = []
+        # Short summaries of past conversations: [{"date": "...", "summary": "..."}]
+        self.episodes: list[dict] = []
         if self.path.exists():
             try:
-                self.facts = json.loads(self.path.read_text(encoding="utf-8")).get("facts", [])
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+                self.facts = data.get("facts", [])
+                self.episodes = data.get("episodes", [])
             except (OSError, ValueError):
-                self.facts = []
+                pass
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"facts": self.facts}, indent=2), encoding="utf-8")
+        tmp.write_text(json.dumps({"facts": self.facts, "episodes": self.episodes}, indent=2),
+                       encoding="utf-8")
         tmp.replace(self.path)
 
     def add(self, fact: str) -> None:
@@ -40,5 +45,18 @@ class Memory:
                 self._save()
         return removed
 
+    def add_episode(self, date: str, summary: str, keep: int = 30) -> None:
+        summary = summary.strip()
+        if not summary:
+            return
+        with self._lock:
+            self.episodes.append({"date": date, "summary": summary})
+            self.episodes = self.episodes[-keep:]
+            self._save()
+
     def as_prompt(self) -> str:
         return "\n".join(f"- {f}" for f in self.facts) or "- (nothing yet)"
+
+    def episodes_prompt(self, count: int = 6) -> str:
+        recent = self.episodes[-count:]
+        return "\n".join(f"- {e['date']}: {e['summary']}" for e in recent) or "- (this is your first chat)"

@@ -1,77 +1,103 @@
-# Jarvis: a local, offline AI voice assistant
+# Jarvis: your AI voice assistant for engineering and everyday work
 
-Say **"Hey Jarvis"** and talk to it. Jarvis listens, thinks, talks back in a
-British voice, and works your laptop for you: it opens apps and websites, scrolls
-Instagram Reels, writes abstracts and essays into Word documents, types for you,
-controls music and volume, sets reminders and remembers things about you.
+Say **"Hey Jarvis"** and talk to it like a person. Jarvis chats with you, remembers
+what you worked on together, and does real work on your computer:
 
-The AI runs **entirely on your laptop**. There's no cloud, no API key and no
-subscription. After a one-time download, it works with Wi-Fi switched off.
+- **SolidWorks**: sketches from the geometry you describe, extrudes, cuts, revolves, fillets, holes, materials, exports
+- **COMSOL**: builds models (1D pipe flow, laminar flow, heat transfer, stress), meshes, solves, reports numbers
+- **Ansys**: beam, truss, thermal, plate and modal analyses through MAPDL, with results checked against hand calculations
+- **Canva**: finds your designs and changes text, sizes, colours, backgrounds and images, and asks before saving
+- **Blender**: builds scenes, animates and renders videos
+- **Code**: writes Python, JavaScript, C and more; builds interactive **websites from your PDFs, PowerPoints and Word files**
+- Everyday tasks: apps, websites, Instagram Reels, typing, music, timers, documents, screenshots
+
+It can also **teach you**: "how do I set up 1D pipe flow in COMSOL?" and it walks you
+through the clicks one step at a time.
 
 ```
-             "Hey Jarvis, write an abstract on solar energy"
+ "Hey Jarvis, sketch a 50 mm equilateral triangle on the front plane and extrude it 10 mm"
                                    |
-  microphone --> wake word --> speech to text --> language model --> text to speech --> speakers
-                (openWakeWord)   (Whisper)        (Ollama, local)      (Piper)
-                                                        |
-                                              tools = Jarvis's hands
-                               apps, browser, keyboard, mouse, Word files,
-                               media keys, timers, memory, offline Wikipedia
+ microphone -> wake word -> speech to text -> conversation brain -> text to speech -> speaker
+                                                     |
+                                     solidworks("...full task...")
+                                                     |
+                          code brain + SolidWorks guide -> writes a script
+                                                     |
+                           runs inside SolidWorks -> error? -> fixes it -> runs again
 ```
 
 ---
 
-## Is this actually possible? (the honest answer)
+## Can it really do all this? (the honest answer)
 
-**Mostly yes.** Here is how each part of the dream holds up:
+**Yes for the workflow, with one big caveat about intelligence.**
 
 | You want | Reality |
 |---|---|
-| **Works offline** | ✅ The brain, the ears, the voice and the wake word all run locally. **But** websites still need internet: Jarvis can scroll Reels for you, but Instagram itself won't load offline. |
-| **Responds when I call it** | ✅ An always-on "Hey Jarvis" detector that uses almost no CPU. It also listens for follow-up questions after answering, without the wake word. |
-| **Talks to me like Jarvis** | ✅ A calm, witty, British-butler personality with a natural neural voice. It remembers facts about you between sessions. |
-| **Does everything I say** | ⚠️ It can do anything it has a *tool* for (the list is below). That's a lot, and new tools are short Python functions. It works the keyboard and mouse like a person would, but it can't see the screen unless you add a vision model. |
-| **Immense intelligence, knows everything online** | ⚠️ This is the real limit. A model that fits on a laptop (7–8 billion parameters) is smart and knows a lot of general knowledge, but it's clearly weaker than ChatGPT or Claude. It makes mistakes, and its knowledge stops at its training date, so it has no news or weather. Two ways to push this: run a bigger model if your hardware allows, and add **offline Wikipedia** (all of it, millions of articles) so Jarvis can look facts up. |
+| Talks like a person | ✅ A warm, witty personality that reacts, asks follow-up questions and remembers past conversations ("last time we were on your flange model..."). |
+| Draws in SolidWorks from geometry you describe | ✅ Through the SolidWorks API, which is far more reliable than clicking. Lines, circles, arcs, polygons, slots, extrudes, cuts, revolves, fillets, chamfers, shells, planes, materials, dimension edits, STEP/STL export. Windows only. |
+| 1D flow in COMSOL / Ansys | ✅ COMSOL through its official Java API (the one "Record Method" uses). 1D pipe flow needs COMSOL's **Pipe Flow Module**; without it, Jarvis can do 2D axisymmetric pipe flow on the base licence. Ansys through PyMAPDL: 1D lines (beams, trusses, heat conduction, pipe elements), 2D and 3D. **Fluent CFD** and Workbench are taught step by step, not automated. |
+| Changes fonts or backgrounds in Canva | ⚠️ Mostly. Through Canva's official connector: text, **font size**, colour, bold, italic, alignment, element and background colours, images, layout. But Canva's connector **can't change the font family** (the typeface itself) right now; Jarvis will say so and offer the closest change. Canva is online-only, so this part needs internet. |
+| Websites from PDFs/PPTs, and any code | ✅ It reads your documents (text and images) and builds a complete interactive site: navigation, quizzes, search, charts. It writes programs in any language and runs and fixes Python itself. |
+| "Knows every tool of these programs" | ⚠️ **This is the real limit.** Jarvis ships with a hand-written guide for each app (API essentials, worked recipes, and click-by-click steps for the main tools), and it fixes its own errors by reading them. But a model small enough to run on a laptop makes mistakes on complex CAD/CAE work. For serious engineering, switch the **code brain to Claude** (below). It knows these APIs far better. Simple and moderate tasks work best; for big projects, Jarvis breaks the work into steps and checks in with you. |
+| Fully offline | ✅ The default (local brain), except Canva and websites, which need internet. The optional Claude brain needs internet. |
 
-The movie version doesn't exist yet, even with a data centre behind it. This gets
-surprisingly close on a normal laptop, and everything stays private.
+Every script Jarvis writes is saved (`data/scripts/`), so you can see exactly what it did, and
+scripts are checked before they run so they don't delete files or run commands.
+
+---
+
+## Two brains: local or Claude
+
+Jarvis uses two brains, and each can be local or cloud (`config.yaml`):
+
+| | Local (Ollama) | Claude (Anthropic API) |
+|---|---|---|
+| Conversation (`llm.provider`) | Private, free, offline. Good small talk and everyday tasks | Much smarter conversation |
+| Code & app scripts (`skills.code_provider`) | `qwen2.5-coder:7b` / `14b`: fine for Blender, simple parts and websites | **Recommended for SolidWorks, COMSOL and Ansys**: knows the APIs, writes much better scripts and sites |
+| Needs | 16 GB RAM for 7B models | Internet + an API key, paid per use |
+
+A good setup is local for conversation and Claude for the heavy work:
+
+```yaml
+llm:
+  provider: ollama
+skills:
+  code_provider: anthropic
+```
+
+Then set your key once. On Windows: `setx ANTHROPIC_API_KEY "sk-ant-..."`; on macOS/Linux, add
+`export ANTHROPIC_API_KEY=...` to your shell profile. Get a key at <https://console.anthropic.com>.
+Voice, wake word and speech recognition always stay on your laptop.
 
 ---
 
 ## What your laptop needs
 
-| Your laptop | Recommended model (`config.yaml` → `llm.model`) | Feels like |
+| Your laptop | Local conversation model | Local code model |
 |---|---|---|
-| 8 GB RAM, no GPU | `qwen2.5:3b` | Quick, basic smarts |
-| **16 GB RAM** (most laptops) | **`qwen2.5:7b`** (default) or `llama3.1:8b` | Good all-rounder. Replies start in a few seconds. |
-| NVIDIA GPU with 12 GB+ VRAM, or Mac with 32 GB | `qwen2.5:14b` | Noticeably smarter |
-| NVIDIA GPU with 24 GB+ VRAM, or Mac with 64 GB | `qwen2.5:32b` | Very capable |
+| 8 GB RAM | `qwen2.5:3b` | use Claude for code |
+| **16 GB RAM** | **`qwen2.5:7b`** (default) | **`qwen2.5-coder:7b`** (default) |
+| NVIDIA GPU 12 GB+ / Mac 32 GB | `qwen2.5:14b` | `qwen2.5-coder:14b` |
+| NVIDIA GPU 24 GB+ / Mac 64 GB | `qwen2.5:32b` | `qwen2.5-coder:32b` |
 
-- **Disk:** about 6 GB for the default setup. Offline Wikipedia is optional and extra: about 50 GB for the full text-only English edition, with smaller editions available.
-- **OS:** Windows 10/11, macOS 12+, or Linux (X11 session).
-- **Python:** 3.10 or newer (3.12 is the safest choice).
-- Any mic and speakers. A headset avoids Jarvis hearing itself.
-
-Any Ollama model that supports **tool calling** works (for example Qwen, Llama 3.1+,
-Mistral, or the Qwen3/gpt-oss "thinking" models with `think: false`). Newer models
-come out all the time, so check [ollama.com/search?c=tools](https://ollama.com/search?c=tools).
+- **Disk:** about 11 GB for the default local setup.
+- **OS:** Windows 10/11 (needed for SolidWorks), macOS 12+ or Linux (X11). Python 3.10+ (3.12 is safest).
+- The apps themselves: SolidWorks, COMSOL, Ansys and Blender must be installed and licensed as usual. Jarvis only drives them.
 
 ---
 
 ## Install
 
-The installer needs internet once, to download Python packages, Ollama and the
-models. After that, everything runs offline.
-
 ### Windows
 
-1. Install **Python 3.12** from <https://www.python.org/downloads/>. On the first installer screen, tick **"Add python.exe to PATH"**.
+1. Install **Python 3.12** from <https://www.python.org/downloads/> and tick **"Add python.exe to PATH"**.
 2. Download this project (**Code → Download ZIP**, then unzip it) or `git clone` it.
-3. Open the project folder, click the address bar, type `powershell` and press Enter. Then run:
+3. In the project folder, click the address bar, type `powershell`, press Enter, then run:
    ```powershell
    powershell -ExecutionPolicy Bypass -File scripts\install.ps1
    ```
-   This creates a virtual environment, installs everything, installs [Ollama](https://ollama.com) with winget and downloads all the models (several GB, so give it time).
+   This installs everything, including [Ollama](https://ollama.com), and downloads the models (several GB).
 4. Double-click **`start_jarvis.bat`** and say **"Hey Jarvis"**.
 
 ### macOS / Linux
@@ -81,9 +107,8 @@ git clone <this repo> jarvis && cd jarvis
 bash scripts/install.sh
 ./start_jarvis.sh
 ```
-
-- **macOS:** allow your Terminal app under *System Settings → Privacy & Security* for **Microphone** and **Accessibility**. Accessibility is what lets it press keys and scroll.
-- **Linux:** keyboard and mouse control needs an **X11** session. On Ubuntu's login screen, choose *"Ubuntu on Xorg"*.
+macOS: allow your Terminal under *System Settings → Privacy & Security* for **Microphone** and
+**Accessibility**. Linux: use an **X11** session (on Ubuntu's login screen, pick *"Ubuntu on Xorg"*).
 
 ### Manual install (any OS)
 
@@ -91,126 +116,102 @@ bash scripts/install.sh
 python -m venv .venv
 # Windows: .venv\Scripts\activate      macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-pip install --no-deps openwakeword      # see the note in requirements.txt
-# install Ollama from https://ollama.com/download and make sure it's running
+pip install --no-deps openwakeword
+pip install ansys-mapdl-core            # only if you have Ansys
 python -m jarvis --setup                # downloads all models once
-python -m jarvis --check                # shows what works and what doesn't
-python -m jarvis                        # go!
+python -m jarvis --check                # shows what works, including which apps were found
+python -m jarvis
 ```
 
 ---
 
-## Using Jarvis
+## Setting up each application
 
-Say **"Hey Jarvis"**, wait for the chime, then speak. When it finishes answering, it
-listens for a few more seconds, so you can keep talking without the wake word.
+Run `python -m jarvis --check` to see which ones Jarvis found.
+
+**SolidWorks (Windows).** Nothing to set up: Jarvis connects to SolidWorks (or starts it) through
+its COM API. Keep SolidWorks' default part template configured (*Tools → Options → Default Templates*).
+
+**COMSOL.** Installed automatically via the `mph` package. If you have several COMSOL versions, set
+`skills.comsol.version: "6.2"`. The first request starts a COMSOL session, which takes about a minute.
+Tip: COMSOL's *Developer → Record Method* shows the exact API for any GUI step. Jarvis's guide explains this too.
+
+**Ansys.** `pip install ansys-mapdl-core` (the installer does it when Ansys is found). Ansys
+Student editions generally work too. If MAPDL isn't found, set `skills.ansys.executable` to the path of `ANSYS242.exe` (or similar).
+
+**Canva.** The first Canva request opens your browser to sign in to Canva and approve Jarvis.
+The login is saved in `data/mcp/canva.json`, so you stay signed in; delete that file to sign out.
+This uses Canva's official connector at `https://mcp.canva.com/mcp`.
+
+**Blender.** Found automatically in the usual install folders, or set `skills.blender.executable`.
+To watch Jarvis build in your open Blender window, install the add-on: *Edit → Preferences →
+Add-ons → Install from Disk* → `jarvis/skills/blender_addon.py`, then tick **Jarvis Bridge**.
+Without the add-on, Jarvis works in the background and saves the scene in `Documents/Jarvis/Projects/blender/`.
+
+---
+
+## Things to say
 
 | Try saying… | What happens |
 |---|---|
-| "Open Instagram Reels" → "next" → "like this one" → "pause" | Drives Reels in your browser (log in to Instagram in your browser first) |
-| "Scroll reels automatically every 10 seconds" … "stop" | Hands-free doomscrolling |
-| "Open YouTube Shorts", "next one", "mute" | Same thing for YouTube Shorts |
-| "Write a 250-word abstract on the impact of AI on healthcare" | Writes it and opens it in Word (saved in `Documents/Jarvis`) |
-| "Type an email to my professor asking for an extension" | Types it straight into the window you have open |
-| "Explain the selected text" / "Summarise what I copied" | Reads your highlighted or copied text and answers |
-| "Open Chrome", "Open VS Code", "Close Spotify" | Launches and quits apps (asks before closing) |
-| "Search YouTube for lo-fi music", "Open Gmail" | Opens it in your browser |
-| "Scroll down", "Press Ctrl+S", "Switch window", "Press Enter" | Keyboard and mouse control |
-| "Pause the music", "Next song", "Volume 40 percent" | Media keys and volume |
-| "What time is it?", "How's my battery?" | System information |
-| "Set a timer for 10 minutes", "Remind me to drink water in 30 minutes" | Speaks up when the time is up |
-| "Remember that my exam is on the 5th of October" | Remembers it permanently, even after a restart |
-| "Take a screenshot" / "What's on my screen?" | Screenshot / vision (needs `vision_model`) |
-| "Find my resume", "Open Downloads" | File search and opening |
-| "Lock the computer", "Shut down" | Power controls (asks before shutting down) |
-| "Explain black holes like I'm ten", "Who was Ashoka?" | Just a conversation |
-| "Stop", "New conversation", "Goodbye" | Instant built-in commands |
+| "Sketch a 60 by 40 millimetre rectangle on the top plane and extrude it 8 mm" | New part, sketch, boss extrude |
+| "Add four 6 mm holes, 10 mm in from each corner, all the way through" | Sketch on the face, cut through all |
+| "Round the vertical edges with a 3 mm fillet, make it aluminium, and tell me the mass" | Fillet, material, mass properties |
+| "Change the plate thickness to 12 mm" | Finds the dimension and edits it |
+| "Export it as STEP to my desktop" | Save As STEP |
+| "Set up a 1D pipe flow in COMSOL: 10 m long, 5 cm diameter, water, 2 kPa pressure drop" | Builds the model, asks if a detail is missing, solves, reports velocity and flow |
+| "Run a cantilever beam in Ansys: 1 m steel, 30 mm square, 1 kN at the tip" | Solves and compares with PL³/3EI |
+| "In Canva, make the title on my birthday poster bigger and gold" | Finds the design, edits a draft, shows a preview, saves when you say yes |
+| "Change the background of the second page to dark blue" | Recolours the page's background shape (when the design has one) |
+| "Make an interactive website from my thermodynamics lecture PDF, with a quiz" | Reads the PDF (text and images), builds the site, opens it |
+| "Add a dark mode to that website" | Edits it and keeps a backup |
+| "Write a Python script that plots the stress-strain curve from data.csv, and run it" | Writes, runs, fixes |
+| "Make a bouncing ball animation in Blender and render it" | Scene, animation, MP4 rendered in the background |
+| "How do I make a revolve in SolidWorks?" | Walks you through the clicks, step by step |
+| Everyday: "Open Instagram Reels", "next", "Write a 250-word abstract on…", "Pause the music", "Remind me in 20 minutes" | Same as before |
 
-Press **Ctrl+C** while it's talking to interrupt it, and **Ctrl+C** again when it's idle to quit.
+Long jobs (renders, big solves) run **in the background** ("I'll tell you when it's done") so you
+can keep talking. Press **Ctrl+C** while Jarvis is talking to interrupt it, and again when idle to quit.
 
 ### Other ways to run it
 
 ```bash
-python -m jarvis --text            # type instead of talking (great for testing)
-python -m jarvis --text --mute     # type, and no voice either
-python -m jarvis --push-to-talk    # press Enter, then speak (no wake word)
+python -m jarvis --text            # type instead of talking
+python -m jarvis --push-to-talk    # press Enter, then speak
 python -m jarvis --model llama3.1:8b
-python -m jarvis --list-devices    # pick a different mic/speaker in config.yaml
 python -m jarvis --check           # diagnose problems
 ```
 
-Everything else, including name, voice, speed, wake word sensitivity and model, is in **`config.yaml`**.
-Want it called "Friday" and calling you "Boss"? Change `assistant_name` and `user_title`.
-Then set `wake_word.engine: whisper`, which reacts to the name instead of the built-in "Hey Jarvis" model.
-
 ---
 
-## Making Jarvis smarter
+## How Jarvis knows these programs
 
-**1. A bigger brain.** Pull a bigger model and put its name in `config.yaml`:
-```bash
-ollama pull qwen2.5:14b
-```
+Each application has a guide in `jarvis/skills/guides/` (`solidworks.md`, `comsol.md`, `ansys.md`,
+`canva.md`, `blender.md`):
 
-**2. Offline Wikipedia, the "knowledge of everything" part.**
-[Kiwix](https://kiwix.org) serves the whole of Wikipedia from one file, offline.
-1. Download a Wikipedia `.zim` file from <https://library.kiwix.org>. For example, "Wikipedia English, no pictures" (big but complete) or a smaller "top articles" edition.
-2. Download **kiwix-tools** from <https://kiwix.org/en/applications/> and run:
-   ```bash
-   kiwix-serve --port 8080 wikipedia_en_all_nopic_XXXX-XX.zim
-   ```
-3. In `config.yaml` set `knowledge: kiwix_url: http://localhost:8080`.
+- **API essentials and helpers**: always given to the code brain before it writes a script
+- **`## Recipe:` sections**: worked examples; the most relevant ones are picked for each task
+- **`## GUI:` sections**: click-by-click steps for teaching you by hand (`how_to`)
 
-Jarvis now looks up facts before answering, instead of relying on memory alone.
-Kiwix also has offline Stack Overflow, Wiktionary, medical encyclopedias and more.
-Any of them work the same way.
+Helper libraries (`jarvis/skills/solidworks.py`, `comsol.py`, `ansys.py`, `blender_helpers.py`) wrap
+the error-prone API calls. For example, SolidWorks' 23-argument `FeatureExtrusion2` becomes `sw.extrude(10)`.
 
-**3. Eyes.** Set `vision_model: qwen2.5vl:7b` (or `gemma3:4b` on smaller machines) and run
-`ollama pull` for it. Then ask "what's on my screen?" or "read this error message".
-
-**4. Better hearing.** If it mishears you, change `stt.model` from `base.en` to `small.en`,
-then run `python -m jarvis --setup` again.
-
----
-
-## Adding your own abilities
-
-Every ability is a normal Python function. For example, add this to
-`jarvis/tools/system.py`:
-
-```python
-@tool(
-    "Open my college timetable.",   # the model reads this to decide when to use it
-)
-def open_timetable(ctx) -> str:
-    open_with_default_app(r"C:\Users\me\Documents\timetable.pdf")
-    return "Opened the timetable."
-```
-
-Arguments are described with JSON schema, and the model fills them in:
-
-```python
-@tool("Send a WhatsApp message.", {
-    "contact": {"type": "string", "description": "Who to message"},
-    "text": {"type": "string", "description": "The message"},
-})
-def whatsapp(ctx, contact: str, text: str) -> str:
-    ...
-```
-
-Use `ctx.confirm("Are you sure?")` before anything risky, and `ctx.say("On it")`
-for progress updates. A new file in `jarvis/tools/` also needs adding to
-`TOOL_MODULES` in `jarvis/tools/__init__.py`.
+**Teach Jarvis more** by adding a `## Recipe:` or `## GUI:` section to a guide in plain Markdown,
+for example your lab's standard COMSOL setup or your company's SolidWorks conventions. That's the
+best way to make it an expert in exactly what you do.
 
 ---
 
 ## Privacy and safety
 
-- The AI, the voice recognition and the voice all run on your machine. Nothing you say leaves your laptop. The only exception is a website you ask it to open, which your browser loads as usual.
-- Jarvis **asks first** before shutting down, restarting, closing apps or closing windows (`safety.confirm_dangerous`).
-- Running terminal commands is **off** by default (`safety.allow_shell`). When it's on, Jarvis still asks before every command.
-- Emergency stop for keyboard and mouse control: slam the mouse into a **screen corner**, or press Ctrl+C.
-- Memory lives in `data/memory.json`. Read it, edit it, or say "forget …".
+- By default the brain, voice recognition and voice run on your machine. Canva, websites you open
+  and the optional Claude brain use the internet.
+- Scripts that Jarvis writes are checked before running: no deleting files, no shell commands, no
+  network. This is a safety net against mistakes, not a sandbox. Every script is saved in
+  `data/scripts/<app>/`.
+- Jarvis **asks first** before shutting down, closing apps, saving Canva changes, or running a program
+  that does something sensitive. Terminal commands are off by default (`safety.allow_shell`).
+- Memory (facts and conversation summaries) lives in `data/memory.json`: read it, edit it, or say "forget …".
 
 ---
 
@@ -218,27 +219,29 @@ for progress updates. A new file in `jarvis/tools/` also needs adding to
 
 | Problem | Fix |
 |---|---|
-| "Can't reach Ollama" | Open the Ollama app (Windows/macOS) or run `ollama serve` |
-| "model isn't downloaded" | `ollama pull qwen2.5:7b` (or whatever your `llm.model` is) |
-| Doesn't react to "Hey Jarvis" | Lower `wake_word.threshold` to `0.3`, check the mic with `--list-devices`, or use `--push-to-talk` |
-| Wakes up by itself | Raise `wake_word.threshold` to `0.7` |
-| Never stops listening | Raise `audio.min_speech_rms` (for example 600) in a noisy room |
-| Cuts you off mid-sentence | Raise `audio.silence_seconds` to `1.5` |
-| Mishears you | `stt.model: small.en`, then `--setup` again |
-| Replies are slow | Use a smaller model, or a GPU. The first reply is always slower while the model loads. |
-| Picks the wrong action | Say it more directly ("open the website instagram.com"), or use a bigger model |
-| Keyboard control does nothing | macOS: allow Accessibility. Linux: use X11. Windows: it can't control apps running as administrator unless Jarvis is too. |
-| Robotic voice | Piper voice missing, so it fell back to the system voice. Run `--setup`. |
+| "Can't reach Ollama" | Open the Ollama app, or run `ollama serve` |
+| An app isn't used ("I can't do that in SolidWorks") | `python -m jarvis --check` shows why it wasn't found; set `enabled: true` or the executable path in `config.yaml` |
+| SolidWorks/COMSOL/Ansys results are wrong or it keeps failing | Use Claude as the code brain (`skills.code_provider: anthropic`), give exact numbers and units, and do it in smaller steps |
+| COMSOL says a feature type is unknown | That physics needs a module you don't have (e.g. Pipe Flow), or the name differs in your version. Jarvis tries to discover names; the base-licence recipes are an alternative |
+| Canva sign-in loop | Delete `data/mcp/canva.json` and try again |
+| Doesn't react to "Hey Jarvis" | Lower `wake_word.threshold` to `0.3`, or use `--push-to-talk` |
+| Never stops listening | Raise `audio.min_speech_rms` (e.g. 600) |
+| Mishears you | `stt.model: small.en`, then `python -m jarvis --setup` |
+| Slow replies | Smaller local model, a GPU, or Claude with `anthropic_effort: low` |
 
 ---
 
 ## Honest limitations
 
-- A laptop-sized model is clever but fallible. It sometimes misunderstands requests, picks the wrong tool, or states wrong facts confidently. Offline Wikipedia and bigger models reduce this.
-- It has no live information (news, weather, prices) unless you ask it to open a website.
-- It controls apps "blind", through the keyboard and mouse. If a website redesigns itself, a shortcut might stop working.
-- You can't interrupt it by voice mid-sentence. Use Ctrl+C or keep your questions short.
-- It's tuned for English. For other languages, use a multilingual `stt.model` (such as `small`) and a Piper voice in that language.
+- A laptop-sized model can pick the wrong approach on complex CAD/CAE tasks; Claude does much better
+  but costs money and needs internet. Always check engineering results before relying on them.
+  Jarvis prints hand-calculation comparisons where it can.
+- SolidWorks automation covers part modelling well. Assemblies, drawings, sweeps and lofts use raw API
+  calls with long argument lists that vary by version, so expect more retries there.
+- Canva: no typeface changes through the connector, and it needs internet.
+- Fluent CFD and Workbench projects are taught step by step, not automated.
+- It controls apps through their APIs, so it can't see your screen unless you add a vision model.
+- Premiere Pro / DaVinci Resolve editing isn't included yet. It's the next skill to add.
 
 ---
 
@@ -246,21 +249,25 @@ for progress updates. A new file in `jarvis/tools/` also needs adding to
 
 ```
 jarvis/
-  __main__.py      command line: python -m jarvis
-  assistant.py     main loop: wake word -> listen -> think -> speak
-  brain.py         personality, conversation memory, tool calling
-  llm.py           talks to the local Ollama server
-  audio.py         microphone + detecting when you start/stop speaking
-  wakeword.py      "Hey Jarvis" (openWakeWord), name spotting, push-to-talk
-  stt.py           speech to text (faster-whisper)
-  tts.py           text to speech (Piper, with the system voice as a fallback)
-  memory.py        long-term memory
-  setup_models.py  --setup downloads and --check diagnostics
-  tools/           everything Jarvis can do (apps, web, keyboard, writing, ...)
-config.yaml        your settings
-tests/             run with: pip install pytest && python -m pytest
+  assistant.py       main loop: wake word -> listen -> think -> speak
+  brain.py           personality, conversation memory, tool calling
+  llm.py, llm_cloud.py  local (Ollama) and cloud (Claude) brains
+  jobs.py            background jobs (renders, solves) with announcements
+  mcp_bridge.py      connectors (Canva) over the Model Context Protocol
+  documents.py       reads PDF / PowerPoint / Word / HTML (text + images)
+  skills/
+    agent.py         write -> run -> fix loop for application scripts
+    guides/*.md      what Jarvis knows about each application
+    solidworks.py comsol.py ansys.py blender.py canva.py web.py
+    blender_helpers.py blender_addon.py
+  tools/             everything Jarvis can do (apps, web, keyboard, writing, skills...)
+  audio.py stt.py tts.py wakeword.py memory.py setup_models.py
+config.yaml          your settings
+tests/               pip install pytest && python -m pytest
 ```
 
-Built on [Ollama](https://ollama.com), [faster-whisper](https://github.com/SYSTRAN/faster-whisper),
-[openWakeWord](https://github.com/dscripka/openWakeWord), [Piper](https://github.com/OHF-Voice/piper1-gpl),
-[PyAutoGUI](https://github.com/asweigart/pyautogui) and [Kiwix](https://kiwix.org).
+Built on [Ollama](https://ollama.com), [Claude](https://www.anthropic.com/api),
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper), [openWakeWord](https://github.com/dscripka/openWakeWord),
+[Piper](https://github.com/OHF-Voice/piper1-gpl), [MPh](https://mph.readthedocs.io),
+[PyMAPDL](https://mapdl.docs.pyansys.com), the [Model Context Protocol](https://modelcontextprotocol.io)
+and [PyAutoGUI](https://github.com/asweigart/pyautogui).

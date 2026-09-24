@@ -27,6 +27,10 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 & $venvPy -m pip install --no-deps openwakeword
+if (Get-ChildItem env: | Where-Object { $_.Name -like "AWP_ROOT*" }) {
+    Write-Host "==> Ansys found: installing PyMAPDL"
+    & $venvPy -m pip install ansys-mapdl-core
+}
 
 Write-Host "==> Checking Ollama (runs the AI model locally)"
 if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {

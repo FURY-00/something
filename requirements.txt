@@ -22,3 +22,16 @@ tqdm
 pyautogui
 pyperclip
 python-docx
+
+# Documents and websites
+pypdf
+python-pptx
+
+# Professional apps
+mcp>=1.10                      # Canva's official connector (and any other MCP connector)
+mph                            # COMSOL (only used if COMSOL is installed)
+pywin32; sys_platform == "win32"   # SolidWorks (Windows only)
+# Ansys: pip install ansys-mapdl-core   (large; the installers add it when Ansys is found)
+
+# Optional cloud brain (Claude). Only used if you set provider: anthropic
+anthropic

@@ -28,6 +28,10 @@ echo "==> Creating virtual environment (.venv)"
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python -m pip install --no-deps openwakeword
+if env | grep -q "^AWP_ROOT"; then
+  echo "==> Ansys found: installing PyMAPDL"
+  .venv/bin/python -m pip install ansys-mapdl-core
+fi
 
 echo "==> Checking Ollama (runs the AI model locally)"
 if ! command -v ollama >/dev/null; then

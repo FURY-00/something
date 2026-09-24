@@ -19,11 +19,19 @@ DEFAULTS: dict[str, Any] = {
     # How Jarvis addresses you ("Sir", "Boss", your first name, ...).
     "user_title": "Sir",
     "llm": {
+        # "ollama" = local and offline. "anthropic" = Claude in the cloud: much
+        # smarter, needs internet and an API key (ANTHROPIC_API_KEY).
+        "provider": "ollama",
         "host": "http://localhost:11434",
         # Any Ollama model that supports tool calling. See README for sizes.
         "model": "qwen2.5:7b",
+        "anthropic_model": "claude-opus-5",
+        # How hard Claude thinks before a spoken reply: low, medium, high.
+        # Lower is faster, which matters in a voice conversation.
+        "anthropic_effort": "medium",
         "temperature": 0.6,
-        "num_ctx": 8192,
+        # Context window in tokens. Tool descriptions alone take ~4k with every app on.
+        "num_ctx": 12288,
         # How long Ollama keeps the model loaded in RAM between requests.
         "keep_alive": "30m",
         # Set to false for "thinking" models (qwen3, gpt-oss, deepseek-r1) to
@@ -35,7 +43,31 @@ DEFAULTS: dict[str, Any] = {
         # "llava:7b", "gemma3:4b"). Leave empty to disable.
         "vision_model": "",
         "max_history_messages": 24,
-        "max_tool_rounds": 6,
+        "max_tool_rounds": 8,
+        # Remember the gist of past conversations (summarised when you say goodbye).
+        "remember_conversations": True,
+    },
+    "skills": {
+        # The brain that writes scripts for applications (SolidWorks, COMSOL,
+        # Ansys, Blender, websites...). "same" follows llm.provider.
+        "code_provider": "same",
+        # Local code model (when code_provider is ollama). A coder model writes
+        # much better scripts: qwen2.5-coder:7b, qwen2.5-coder:14b, ...
+        "code_model": "qwen2.5-coder:7b",
+        "code_num_ctx": 16384,
+        # Effort for the cloud code brain: high or xhigh for engineering work.
+        "code_effort": "high",
+        # Write -> run -> fix attempts before giving up on a task.
+        "max_attempts": 4,
+        # Skip the check that stops scripts deleting files or running commands.
+        "allow_unsafe_code": False,
+        # Each application: enabled = auto (if installed), true or false.
+        "blender": {"enabled": "auto", "executable": "", "port": 9876},
+        "solidworks": {"enabled": "auto"},
+        "comsol": {"enabled": "auto", "version": "", "cores": 0},
+        "ansys": {"enabled": "auto", "executable": ""},
+        "canva": {"enabled": "auto", "url": "https://mcp.canva.com/mcp"},
+        "web": {"enabled": "auto"},
     },
     "wake_word": {
         # openwakeword: always-on "Hey Jarvis" detector (recommended)
@@ -94,6 +126,8 @@ DEFAULTS: dict[str, Any] = {
     "paths": {
         "documents": "~/Documents/Jarvis",
         "screenshots": "~/Pictures/Jarvis",
+        # Where Jarvis saves CAD parts, simulations, renders and websites.
+        "projects": "~/Documents/Jarvis/Projects",
         # Where Jarvis keeps its long-term memory.
         "data": str(ROOT / "data"),
     },

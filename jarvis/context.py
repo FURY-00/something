@@ -20,7 +20,10 @@ class ToolContext:
     ) -> None:
         self.config = config
         self.llm = llm
+        # The brain that writes application scripts and code (may be a coder model).
+        self.code_llm = llm
         self.memory = memory
+        self.jobs = None  # JobManager, for long work in the background
         self._say = say or (lambda text: print(f"{config.assistant_name}: {text}"))
         self._ask_yes_no = ask_yes_no or (lambda question: False)
         self._announce = announce or self._say
