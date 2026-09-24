@@ -1,0 +1,55 @@
+# Jarvis settings. Delete a line to use its default (see jarvis/config.py).
+
+assistant_name: Jarvis
+user_title: Sir            # how Jarvis addresses you: Sir, Boss, your name...
+
+llm:
+  # The "brain". Any Ollama model with tool support works. Pick by your RAM:
+  #    8 GB RAM  -> qwen2.5:3b     (fast, basic)
+  #   16 GB RAM  -> qwen2.5:7b     (good default) or llama3.1:8b
+  #   GPU 12 GB+ -> qwen2.5:14b    (noticeably smarter)
+  #   GPU 24 GB+ -> qwen2.5:32b    (very capable)
+  # After changing it run:  ollama pull <model>
+  model: qwen2.5:7b
+  # For "thinking" models (qwen3, gpt-oss, deepseek-r1) set think: false for faster replies.
+  think: null
+  # Optional: a vision model lets Jarvis look at your screen ("what's on my screen?").
+  # e.g. qwen2.5vl:7b, gemma3:4b, llava:7b  (then: ollama pull <model>)
+  vision_model: ""
+
+wake_word:
+  engine: openwakeword     # openwakeword ("Hey Jarvis"), whisper (just say "Jarvis"), enter (push to talk)
+  threshold: 0.5           # raise (0.6-0.7) if it wakes up by accident, lower if it misses you
+  follow_up_seconds: 6     # keep listening this long after answering, without the wake word
+
+stt:
+  # Speech recognition. Bigger = more accurate but slower:
+  # tiny.en, base.en, small.en, medium.en, distil-large-v3 (non-English: small, medium, large-v3)
+  model: base.en
+  device: cpu              # cpu, or cuda for NVIDIA GPUs with CUDA 12 + cuDNN installed
+
+tts:
+  engine: piper            # piper (natural voice) or pyttsx3 (built-in system voice)
+  # British male voices: en_GB-alan-medium, en_GB-northern_english_male-medium
+  # More at https://rhasspy.github.io/piper-samples/  (then run --setup again)
+  voice: en_GB-alan-medium
+  length_scale: 0.95       # speaking speed: lower = faster
+
+audio:
+  input_device: null       # microphone number from: python -m jarvis --list-devices
+  output_device: null
+  silence_seconds: 1.0     # pause length that means "I've finished talking"
+  min_speech_rms: 350      # raise in noisy rooms if Jarvis never stops listening
+  chime: true
+
+knowledge:
+  # Offline Wikipedia via Kiwix (see README). Example: http://localhost:8080
+  kiwix_url: ""
+
+safety:
+  confirm_dangerous: true  # ask before shutdown, restart, closing apps...
+  allow_shell: false       # let Jarvis run terminal commands (always asks first)
+
+paths:
+  documents: ~/Documents/Jarvis
+  screenshots: ~/Pictures/Jarvis

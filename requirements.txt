@@ -1,0 +1,24 @@
+# Core
+numpy
+requests
+pyyaml
+psutil
+
+# Ears and voice
+sounddevice
+faster-whisper>=1.0
+piper-tts>=1.3
+pyttsx3
+onnxruntime
+
+# openWakeWord ("Hey Jarvis") is installed separately with --no-deps because it
+# pins tflite-runtime, which doesn't exist for newer Pythons. These are the
+# dependencies it actually needs:
+scipy
+scikit-learn
+tqdm
+
+# Hands
+pyautogui
+pyperclip
+python-docx
