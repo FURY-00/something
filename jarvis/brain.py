@@ -55,7 +55,7 @@ Knowledge
 - {knowledge}
 - If you don't know or aren't sure, say so honestly instead of guessing.
 
-Current date and time: {now}.
+Today is {now} (use get_date_time for the exact time).
 What you know about the user:
 {memory}
 Your past conversations with the user (most recent last):
@@ -201,7 +201,10 @@ class Brain:
             os=self.os_name,
             skills=skills,
             knowledge=knowledge,
-            now=dt.datetime.now().strftime("%A %d %B %Y, %I:%M %p"),
+            # Date only: a clock that changes every minute would make the local model
+            # re-read the whole prompt (thousands of tokens) instead of reusing its cache.
+            # get_date_time gives the exact time when it's needed.
+            now=dt.datetime.now().strftime("%A %d %B %Y"),
             memory=self.memory.as_prompt(),
             episodes=self.memory.episodes_prompt(),
             jobs=f"Background jobs:\n{jobs}" if jobs else "",
