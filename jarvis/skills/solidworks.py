@@ -271,6 +271,79 @@ class SW:
         self.model.SetMaterialPropertyName2(config, database, name)
         print(f"Material: {name}")
 
+    # -- holes and patterns (sketch-based: more reliable than pattern features) --
+    def holes(self, face_point, centres, diameter, depth=None):
+        """Cut round holes at 2D sketch positions [(x, y), ...] on the face at face_point (mm)."""
+        self.start_sketch(face_point=face_point)
+        for x, y in centres:
+            self.circle(x, y, diameter / 2)
+        self.finish_sketch()
+        feat = self.cut(depth=depth, through_all=depth is None)
+        print(f"{len(centres)} hole(s) of {diameter} mm")
+        return feat
+
+    def bolt_circle(self, face_point, pcd, count, diameter, start_angle=0.0, centre=(0, 0), depth=None):
+        """Holes evenly spaced on a pitch circle diameter `pcd` (mm), angles in degrees."""
+        import math
+
+        cx, cy = centre
+        pts = [(cx + pcd / 2 * math.cos(math.radians(start_angle + 360 * i / count)),
+                cy + pcd / 2 * math.sin(math.radians(start_angle + 360 * i / count))) for i in range(count)]
+        return self.holes(face_point, pts, diameter, depth)
+
+    def hole_grid(self, face_point, x0, y0, nx, ny, dx, dy, diameter, depth=None):
+        """A rectangular grid of holes starting at (x0, y0) with pitches dx, dy (mm)."""
+        pts = [(x0 + i * dx, y0 + j * dy) for i in range(nx) for j in range(ny)]
+        return self.holes(face_point, pts, diameter, depth)
+
+    # -- drawings, assemblies, parameters -------------------------------------
+    def drawing(self, part_path: str, pdf_path: str | None = None):
+        """Standard three-view drawing of a saved part; optionally save it as PDF."""
+        template = self.app.GetUserPreferenceStringValue(SW_DEFAULT_TEMPLATE_DRAWING)
+        drw = self.app.NewDocument(template, 12, 0.42, 0.297)  # A3 landscape
+        if drw is None:
+            raise SolidWorksError("Couldn't create a drawing (check the default drawing template)")
+        if not drw.Create3rdAngleViews2(part_path):
+            raise SolidWorksError(f"Couldn't create views of {part_path} (is it saved?)")
+        if pdf_path:
+            self.save(pdf_path)
+        print(f"Drawing created for {part_path}")
+        return drw
+
+    def insert_component(self, path: str, x=0.0, y=0.0, z=0.0):
+        """Add a saved part or assembly into the active assembly at (x, y, z) mm."""
+        comp = self.model.AddComponent5(path, 0, "", False, "", x * MM, y * MM, z * MM)
+        comp = self._check(comp, f"component from {path} (is an assembly active?)")
+        print(f"Inserted {comp.Name2}")
+        return comp
+
+    MATES = {"coincident": 0, "concentric": 1, "perpendicular": 2, "parallel": 3, "tangent": 4,
+             "distance": 5, "angle": 6}
+
+    def mate(self, kind: str, distance=0.0, angle=0.0, flip=False):
+        """Mate the two currently selected entities (select them with sw.select(..., append=True))."""
+        import math
+
+        err = self._win32.VARIANT(16387, 0)
+        mate = self.model.AddMate5(self.MATES[kind], 0 if not flip else 1, flip, distance * MM,
+                                   distance * MM, distance * MM, 1, 1, math.radians(angle),
+                                   math.radians(angle), math.radians(angle), False, False, 0, err)
+        mate = self._check(mate, f"{kind} mate (error {getattr(err, 'value', '?')})")
+        self.rebuild()
+        print(f"Added {kind} mate")
+        return mate
+
+    def equation(self, text: str) -> None:
+        """Add an equation, e.g. '"D1@Sketch1" = 2 * "D2@Sketch1"' or '"thickness" = 8'."""
+        self.model.GetEquationMgr().Add2(-1, text, True)
+        self.rebuild()
+        print(f"Equation: {text}")
+
+    def set_property(self, name: str, value: str) -> None:
+        """Custom file property (part number, description, author...)."""
+        self.model.Extension.CustomPropertyManager("").Add3(name, 30, str(value), 2)
+        print(f"Property {name} = {value}")
+
     # -- information ---------------------------------------------------------
     def mass_properties(self) -> dict:
         mp = self.model.Extension.CreateMassProperty()

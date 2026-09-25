@@ -11,6 +11,12 @@ APDL command is a method with the same name and arguments: `ET,1,BEAM188` is
   Steady-state thermal is also "STATIC" with thermal elements.
 - `an.max_displacement("NORM"|"X"|"Y"|"Z")`, `an.max_stress()` (von Mises), `an.temperatures()`, `an.frequencies(6)`
 - `an.plot("displacement"|"stress"|"temperature", path=None)` save a contour image, `an.save(name)`, `an.summary()`
+- `an.truss(nodes, members, area, E=200e9, supports={0: "xy", 3: "y"}, loads={2: (0, -10e3)})` builds
+  and solves a LINK180 truss in one call and returns member forces (tension +)
+- `an.reactions()` total support reactions FX/FY/FZ (check they balance the loads)
+- `an.buckling(modes=3)` eigenvalue buckling: load factors x applied load = critical loads
+- `an.transient(end_time, step, initial_temperature=None)` transient solution (set DENS and C for thermal)
+- `an.harmonic(f_min, f_max, steps=50, damping_ratio=0.02)` harmonic (frequency) response
 
 ## APDL essentials
 Element types (`mapdl.et(1, name)`):
@@ -92,6 +98,69 @@ an.solve("STATIC"); an.max_stress()
 print("Expected peak about 3 x nominal for a small hole in a wide plate")
 ```
 
+## Recipe: truss bridge member forces
+```python
+nodes = [(0, 0), (4, 0), (8, 0), (2, 3), (6, 3)]                 # m
+members = [(0, 1), (1, 2), (0, 3), (3, 1), (1, 4), (4, 2), (3, 4)]
+forces = an.truss(nodes, members, area=8e-4, E=200e9,
+                  supports={0: "xy", 2: "y"}, loads={1: (0, -20e3)})   # 20 kN at mid-span
+an.reactions()
+print("Largest member force:", max(abs(f) for f in forces) / 1e3, "kN")
+```
+
+## Recipe: column buckling vs Euler
+```python
+an.new("Column buckling")
+L, a, E = 2.0, 0.02, 200e9
+mapdl.et(1, "BEAM188"); mapdl.mp("EX", 1, E); mapdl.mp("PRXY", 1, 0.3)
+mapdl.sectype(1, "BEAM", "RECT"); mapdl.secdata(a, a)
+mapdl.k(1, 0, 0, 0); mapdl.k(2, 0, L, 0); mapdl.l(1, 2)
+mapdl.lesize("ALL", ndiv=40); mapdl.lmesh("ALL")
+mapdl.nsel("S", "LOC", "Y", 0)
+for dof in ("UX", "UY", "UZ", "ROTY"):
+    mapdl.d("ALL", dof, 0)                                       # pinned base, no twisting
+mapdl.nsel("S", "LOC", "Y", L)
+for dof in ("UX", "UZ", "ROTY"):
+    mapdl.d("ALL", dof, 0)                                       # pinned top, free to move down
+mapdl.f("ALL", "FY", -1.0); mapdl.allsel()                       # unit load: factor = critical load
+factors = an.buckling(3)
+I = a**4 / 12
+print(f"Euler P_cr = pi^2 E I / L^2 = {3.14159**2 * E * I / L**2:.1f} N; FEA first mode {factors[0]:.1f} N")
+```
+
+## Recipe: thick-walled cylinder under internal pressure (axisymmetric, vs Lame)
+```python
+an.new("Thick cylinder")
+ri, ro, p = 0.05, 0.10, 50e6                                     # m, m, Pa
+mapdl.et(1, "PLANE183", kop3=1)                                   # axisymmetric: x = radius, y = axis
+mapdl.mp("EX", 1, 200e9); mapdl.mp("PRXY", 1, 0.3)
+mapdl.rectng(ri, ro, 0, 0.02); mapdl.esize(0.0025); mapdl.amesh("ALL")
+for y in (0, 0.02):
+    mapdl.nsel("S", "LOC", "Y", y); mapdl.d("ALL", "UY", 0)      # long cylinder (plane strain)
+mapdl.allsel()
+mapdl.lsel("S", "LOC", "X", ri); mapdl.sfl("ALL", "PRES", p); mapdl.allsel()
+an.solve("STATIC")
+mapdl.post1(); mapdl.set("LAST")
+hoop = mapdl.post_processing.nodal_component_stress("Z")         # Z = hoop direction in axisymmetry
+print(f"FEA max hoop stress {max(hoop)/1e6:.1f} MPa; Lame {p*(ro**2 + ri**2)/(ro**2 - ri**2)/1e6:.1f} MPa")
+```
+
+## Recipe: transient cooling of a hot plate (vs lumped model)
+```python
+import math
+an.new("Cooling plate")
+a, h, T_inf, T0 = 0.05, 50.0, 25.0, 200.0                         # m, W/m^2K, degC, degC
+k, rho, c = 200.0, 2700.0, 900.0                                  # aluminium
+mapdl.et(1, "PLANE55"); mapdl.mp("KXX", 1, k); mapdl.mp("DENS", 1, rho); mapdl.mp("C", 1, c)
+mapdl.rectng(0, a, 0, a); mapdl.esize(a / 10); mapdl.amesh("ALL")
+mapdl.lsel("ALL"); mapdl.sfl("ALL", "CONV", h, "", T_inf); mapdl.allsel()
+an.transient(end_time=600, step=10, initial_temperature=T0)
+T = an.temperatures()
+tau = rho * c * (a * a) / (h * 4 * a)                             # lumped: V / A = a / 4 per unit depth
+print(f"Biot = {h * a / 4 / k:.4f} (< 0.1 so lumped is valid); lumped T(600 s) = "
+      f"{T_inf + (T0 - T_inf) * math.exp(-600 / tau):.1f} degC; FEA mean {T.mean():.1f} degC")
+```
+
 ## Recipe: natural frequencies (modal)
 Build the model as usual (with density!), fix the supports, then `an.solve("MODAL", modes=6)` and
 `an.frequencies(6)`.
@@ -113,6 +182,20 @@ Build the model as usual (with density!), fix the supports, then `an.solve("MODA
 5. Solution: Hybrid Initialization, Run Calculation with 300+ iterations. Watch the residuals.
 6. Results: Contours of velocity/pressure; Plots > XY Plot along the axis; Reports > Surface Integrals for the pressure drop.
 Pipe networks in 1D belong in Ansys Flownex or MAPDL FLUID116 elements. Fluent itself is 2D/3D.
+
+## GUI: Workbench modal, buckling and thermal analyses
+1. Modal: drag Modal onto the Static Structural geometry cell (they share geometry). Add supports, Solve, and read
+   the frequencies in the Tabular Data; right-click to create mode shape results.
+2. Linear buckling: drag Eigenvalue Buckling onto the Solution cell of a Static Structural with a unit load.
+   The load multiplier times the applied load is the critical load.
+3. Steady/transient thermal: add temperatures, convection, heat flux; transfer the result to Static Structural
+   (drag Solution onto Setup) for thermal stress.
+
+## GUI: mesh quality and convergence in Mechanical
+1. Mesh details: Element Size, Sizing on edges/faces, Refinement, Inflation for CFD. Check Mesh Metrics
+   (element quality, skewness < 0.9).
+2. Results: right-click a stress result > Insert > Convergence, allow 5 percent change; Mechanical refines
+   automatically. Probe stresses away from singular corners and point loads.
 
 ## GUI: Mechanical APDL (classic)
 1. Preprocessor > Element Type > Add; Material Props > Material Models; Modeling > Create; Meshing > MeshTool.

@@ -23,6 +23,15 @@ Features (act on the last sketch unless `sketch=` is given):
 - `sw.set_material('AISI 304')`, `sw.mass_properties()`, `sw.features()`, `sw.dimensions()`,
   `sw.set_dimension('D1@Boss-Extrude1', 25)`, `sw.rebuild()`, `sw.zoom('isometric')`, `sw.undo()`
 - `sw.select(name, kind, x, y, z, append=False)` kinds: PLANE, SKETCH, BODYFEATURE, FACE, EDGE, AXIS, EXTSKETCHSEGMENT
+Holes and patterns (sketch-based, reliable):
+- `sw.holes(face_point, [(x, y), ...], diameter, depth=None)` (None = through all)
+- `sw.bolt_circle(face_point, pcd, count, diameter, start_angle=0, centre=(0, 0))`
+- `sw.hole_grid(face_point, x0, y0, nx, ny, dx, dy, diameter)`
+Drawings, assemblies, parameters:
+- `sw.drawing(part_path, pdf_path=None)` three standard views of a SAVED part, optional PDF
+- `asm = sw.new_assembly()`, `sw.insert_component(path, x, y, z)`, select two faces with
+  `sw.select('', 'FACE', ...)` / `append=True`, then `sw.mate('coincident'|'concentric'|'parallel'|'distance'|'angle', distance=..)`
+- `sw.equation('"D1@Sketch1" = 2 * "D2@Sketch1"')`, `sw.set_property('PartNo', 'P-001')`
 
 ## Rules that avoid most failures
 - Always `sw.finish_sketch()` before a feature. Profiles for extrude/revolve must be closed loops that don't cross.
@@ -95,14 +104,70 @@ sw.finish_sketch()
 sw.extrude(30)
 ```
 
-## Recipe: bolt circle (holes on a pitch circle)
+## Recipe: flange with a bolt circle
+```python
+sw.new_part()
+sw.start_sketch("front")
+sw.circle(0, 0, 60)                              # outer diameter 120
+sw.circle(0, 0, 25)                              # bore diameter 50 (inner loop becomes a hole)
+sw.finish_sketch()
+sw.extrude(12)
+sw.bolt_circle(face_point=(0, 42, 12), pcd=90, count=6, diameter=9)   # face point on the flange face
+sw.set_material("Plain Carbon Steel"); sw.mass_properties(); sw.zoom()
+```
+
+## Recipe: hex nut (simplified, M8)
 ```python
 import math
-sw.start_sketch(face_point=(0, 0, thickness))
-for i in range(6):
-    a = 2 * math.pi * i / 6
-    sw.circle(40 * math.cos(a), 40 * math.sin(a), 4)
-sw.finish_sketch(); sw.cut(through_all=True)
+sw.new_part()
+sw.start_sketch("front")
+sw.polygon(0, 0, 13 / 2 / math.cos(math.pi / 6), 6)   # 13 mm across flats
+sw.circle(0, 0, 4)                                   # 8 mm hole (threads drawn as cosmetic in the GUI)
+sw.finish_sketch()
+sw.extrude(6.5)
+sw.zoom()
+```
+
+## Recipe: shaft with a keyway
+```python
+sw.new_part()
+sw.start_sketch("front")
+sw.centerline(-5, 0, 105, 0)                     # axis along X
+sw.polyline([(0, 0), (0, 15), (60, 15), (60, 12.5), (100, 12.5), (100, 0)])  # stepped 30/25 mm shaft
+sw.finish_sketch()
+sw.revolve(360)
+plane = sw.plane_offset("top", 15)               # plane tangent to the 30 mm section
+sw.start_sketch(plane)
+sw.slot(12, 0, 48, 0, 8)                         # 8 mm wide keyway, centres at x = 12 and 48
+sw.finish_sketch()
+sw.cut(depth=4, reverse=True)                    # cut down into the shaft; flip `reverse` if nothing is removed
+sw.zoom()
+```
+
+## Recipe: parametric plate driven by equations
+```python
+sw.new_part()
+sw.start_sketch("front"); sw.center_rectangle(0, 0, 80, 50); sw.finish_sketch()
+sw.extrude(6)
+print(sw.dimensions())                            # find the names, e.g. D1@Sketch1, D2@Sketch1, D1@Boss-Extrude1
+# Then e.g. make the width always 1.6 x the height:
+# sw.equation('"D1@Sketch1" = 1.6 * "D2@Sketch1"')
+```
+
+## Recipe: drawing and PDF of the current part
+```python
+part = sw.save(r"C:\Users\Public\Documents\bracket.sldprt")   # the part must be saved first
+sw.drawing(part, pdf_path=r"C:\Users\Public\Documents\bracket.pdf")
+```
+
+## Recipe: simple two-part assembly
+```python
+asm = sw.new_assembly()
+base = sw.insert_component(r"C:\parts\plate.sldprt", 0, 0, 0)
+pin = sw.insert_component(r"C:\parts\pin.sldprt", 0, 0, 50)
+# Pick a cylindrical face on each part (points ON the faces, in assembly mm), then mate:
+sw.select("", "FACE", 40, 20, 4); sw.select("", "FACE", 3, 0, 55, append=True)
+sw.mate("concentric")
 ```
 
 ## Recipe: hollow box (shell)
@@ -173,3 +238,38 @@ user only asked for a sketch: call `sw.finish_sketch()` only when they want a fe
 1. Tools > Add-ins, tick SOLIDWORKS Simulation. Simulation tab > New Study > Static.
 2. Apply Material, Fixtures (Fixed Geometry on the mounting faces) and External Loads (Force/Pressure).
 3. Mesh > Create Mesh, then Run. Check von Mises stress, displacement and factor of safety plots.
+
+## GUI: configurations and design tables
+1. ConfigurationManager tab (third tab over the tree) > right-click the part > Add Configuration.
+2. In each configuration, double-click a feature to show dimensions, change them, and pick "This configuration".
+3. Insert > Tables > Design Table (Auto-create) builds an Excel sheet of sizes, one row per configuration.
+
+## GUI: equations and global variables
+1. Tools > Equations. Add Global Variables (e.g. thickness = 8) and equations linking dimensions.
+2. In any dimension box, type = and pick a global variable to link it.
+
+## GUI: sheet metal
+1. Sketch a profile, then Sheet Metal tab > Base Flange/Tab, set thickness and bend radius.
+2. Edge Flange on an edge, Hem, Jog, Sketched Bend. Flatten shows the flat pattern; export it as DXF
+   (right-click Flat-Pattern > Export to DXF/DWG).
+
+## GUI: weldments (frames from structural profiles)
+1. Draw a 3D sketch or 2D sketch of the frame centre lines.
+2. Weldments tab > Structural Member, pick the standard and profile (e.g. ISO square tube 40 x 40 x 4),
+   select the lines. Trim/Extend to tidy the corners. The cut list lists every member length.
+
+## GUI: SolidWorks Simulation frequency, thermal and fatigue studies
+1. Frequency study: Simulation > New Study > Frequency, material, fixtures, mesh, run; read the mode shapes.
+2. Thermal study: apply temperatures, convection and heat power; run; then use it as a thermal load in a static study.
+3. Fatigue: run a static study first, then New Study > Fatigue, add an event (cycles, loading ratio), assign the S-N curve.
+4. Always check mesh convergence (Mesh > Create Mesh with finer settings, or an adaptive h-method study).
+
+## GUI: motion study
+1. Open an assembly, click the Motion Study 1 tab at the bottom.
+2. Choose Animation (simple), Basic Motion (gravity, springs, contact) or Motion Analysis (forces, Motion add-in).
+3. Add a Motor on a rotating part, set its speed, Calculate, then Save Animation as a video.
+
+## GUI: surfaces and complex shapes
+1. Surfaces tab: Extruded, Revolved, Swept, Lofted and Boundary surfaces for freeform shapes.
+2. Knit Surface (with "create solid") turns a closed set of surfaces into a solid.
+3. Use Curvature and Zebra Stripes (View > Display) to check smoothness.

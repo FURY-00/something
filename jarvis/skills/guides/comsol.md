@@ -13,6 +13,17 @@ Python list `["a", "b"]`, and `true` is `True`.
 - `cs.tags(node_list)` e.g. `cs.tags(jm.component("comp1").physics("spf").feature())`
 - `cs.solve(study=None)`, `cs.evaluate(expr, unit=None, dataset=None)`, `cs.save(path=None)`
 - `cs.export_image("pg1", path)` save a plot group as PNG; `cs.summary()` overview of the model
+- Shortcuts (use them, they avoid most API mistakes):
+  - `cs.component("comp1")` get or create a component
+  - `cs.material("Steel", density="7850[kg/m^3]", E="200e9[Pa]", nu=0.3, k="45[W/(m*K)]", cp="475[J/(kg*K)]")`
+    keys: density, mu, k, cp, alpha, sigma, E, nu; `selection=[1, 2]` for particular domains
+  - `cs.box("inlet", dim=1, xmin=-1e-6, xmax=1e-6, ymin=-1, ymax=1)` named selection by coordinates;
+    then `feature.selection().named("inlet")`
+  - `cs.operator("Maximum", "maxop1", selection="outlet", dim=1)` then `model.evaluate("maxop1(T)", "degC")`
+  - `cs.study("Stationary")`, `cs.study("Transient", tlist="range(0,10,600)")`,
+    `cs.study("Eigenfrequency", neigs=6)`, `cs.study("Frequency", plist="range(10,10,500)")`
+  - `cs.sweep("std1", "L", "range(0.1,0.1,1)")` parametric sweep
+  - `cs.plot("T", dim=2, path="~/Documents/Jarvis/Projects/comsol/T.png")` quick plot and PNG
 - mph itself: `model.parameter("L", "0.5[m]")`, `model.parameters()`, `model.build()`, `model.mesh()`,
   `model.solve("std1")`, `model.evaluate("T", "degC")` (numpy array), `model.save(path)`
 
@@ -140,6 +151,61 @@ cs.save()
 Boundary 1 is the symmetry axis (r = 0) and 4 is the wall, which gets the default no-slip wall.
 The fully developed peak velocity should approach 2 * Uin (Hagen-Poiseuille): a good check.
 
+## Recipe: eigenfrequencies of a cantilever (3D, vs beam theory)
+```python
+model = cs.new_model("cantilever_modes")
+jm = model.java
+jm.param().set("L", "0.3[m]"); jm.param().set("b", "0.02[m]"); jm.param().set("h", "0.005[m]")
+comp = cs.component()
+geom = comp.geom().create("geom1", 3)
+blk = geom.create("blk1", "Block"); blk.set("size", ["L", "b", "h"]); geom.run()
+cs.material("Steel", density="7850[kg/m^3]", E="200e9[Pa]", nu=0.3)
+solid = comp.physics().create("solid", "SolidMechanics", "geom1")
+cs.box("root", dim=2, xmin=-1e-6, xmax=1e-6, ymin=-1, ymax=1, zmin=-1, zmax=1)
+solid.create("fix1", "Fixed", 2).selection().named("root")
+comp.mesh().create("mesh1").autoMeshSize(4)
+cs.study("Eigenfrequency", neigs=4)
+model.solve("std1")
+freqs = model.evaluate("solid.freq", "Hz")
+import math
+E, rho, L, h = 200e9, 7850, 0.3, 0.005
+f1 = 1.875**2 / (2 * math.pi) * math.sqrt(E * h**2 / (12 * rho * L**4))
+print("FEA frequencies (Hz):", np.round(np.atleast_1d(freqs), 1), f"| beam theory f1 = {f1:.1f} Hz")
+cs.save()
+```
+
+## Recipe: parametric sweep (pressure drop vs pipe length)
+Build a model with a parameter (e.g. `L`) used in the geometry, then:
+```python
+cs.study("Stationary")
+cs.sweep("std1", "L", "range(0.1,0.1,0.5)")
+model.solve("std1")
+print("inlet pressure for each L:", model.evaluate("aveop1(p)", "Pa"))   # define aveop1 on the inlet first
+```
+Define the average operator before solving: `cs.operator("Average", "aveop1", selection="inlet", dim=1)`.
+
+## Recipe: steady heat conduction with convection (2D block)
+```python
+model = cs.new_model("block_cooling")
+jm = model.java
+comp = cs.component()
+geom = comp.geom().create("geom1", 2)
+r = geom.create("r1", "Rectangle"); r.set("size", ["0.1", "0.02"]); geom.run()
+cs.material("Aluminium", density="2700[kg/m^3]", k="200[W/(m*K)]", cp="900[J/(kg*K)]")
+ht = comp.physics().create("ht", "HeatTransfer", "geom1")
+cs.box("bottom", dim=1, xmin=-1e-6, xmax=0.1 + 1e-6, ymin=-1e-6, ymax=1e-6)
+cs.box("top", dim=1, xmin=-1e-6, xmax=0.1 + 1e-6, ymin=0.02 - 1e-6, ymax=0.02 + 1e-6)
+hot = ht.create("temp1", "TemperatureBoundary", 1); hot.selection().named("bottom"); hot.set("T0", "80[degC]")
+conv = ht.create("hf1", "HeatFluxBoundary", 1); conv.selection().named("top")
+print(cs.props(conv))                     # find the convective option names in this COMSOL version
+conv.set("HeatFluxType", "ConvectiveHeatFlux"); conv.set("h", "25[W/(m^2*K)]"); conv.set("Text", "20[degC]")
+comp.mesh().create("mesh1").autoMeshSize(5)
+cs.operator("Minimum", "minop1", selection="top", dim=1)     # define operators before solving
+cs.study("Stationary"); model.solve("std1")
+print("coolest top temperature:", model.evaluate("minop1(T)", "degC"), "degC")
+cs.plot("T", dim=2)
+```
+
 ## Recipe: 1D heat conduction in a rod
 Geometry: `Interval` 0..L. Physics `"HeatTransfer"` (tag "ht"). Set the material thermal conductivity,
 density and heat capacity. `TemperatureBoundary` on point 1 (T0 = 100[degC]) and point 2 (T0 = 20[degC]),
@@ -180,3 +246,18 @@ the face at x = 0 (Box selection, entitydim 2) and `BoundaryLoad` on the face at
 Developer tab > Record Method. Do the step in the GUI, then Stop Recording. The method shows the exact
 Java calls, which work unchanged through `jm` here. File > Save As > Model File for Java (*.java) exports a
 whole model as API calls.
+
+## GUI: parametric sweeps and optimisation
+1. Right-click Study 1 > Parametric Sweep. Add a parameter from Global Definitions and a range (e.g. range(0.1,0.1,1)).
+2. Compute. Results get one solution per value; plot a Global evaluation against the parameter with a 1D Plot Group.
+3. Optimisation module: Study > Optimization, pick the objective (e.g. minimise max stress) and control variables.
+
+## GUI: multiphysics coupling (e.g. thermal stress)
+1. Add both physics (Heat Transfer in Solids and Solid Mechanics), or pick Structural Mechanics > Thermal Stress in the wizard.
+2. Multiphysics node > Thermal Expansion couples them. Give the material a thermal expansion coefficient.
+3. Solve a stationary study with both physics; plot von Mises stress and displacement.
+
+## GUI: mesh convergence study
+1. Solve with the default mesh, note the key result (max stress, pressure drop).
+2. Mesh > Element Size > Finer, Extra fine; or add a Size node on critical boundaries. Recompute each time.
+3. The mesh is good enough when the result changes by less than a few percent. Avoid judging stress at sharp corners.

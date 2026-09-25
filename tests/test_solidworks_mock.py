@@ -17,7 +17,8 @@ from jarvis.skills.guides import load_guide
 ARG_COUNTS = {"FeatureExtrusion2": 23, "FeatureCut4": 27, "FeatureRevolve2": 20, "FeatureFillet3": 14,
               "SelectByID2": 9, "CreateLine": 6, "CreateCircleByRadius": 4, "CreateCenterRectangle": 6,
               "CreateCornerRectangle": 6, "CreateCenterLine": 6, "CreatePolygon": 8, "SaveAs3": 3,
-              "InsertRefPlane": 6, "SetMaterialPropertyName2": 3}
+              "InsertRefPlane": 6, "SetMaterialPropertyName2": 3, "AddComponent5": 8, "AddMate5": 15,
+              "CreateSketchSlot": 14, "Create3rdAngleViews2": 1}
 
 
 class Feature:
@@ -54,6 +55,8 @@ class Recorder:
                 self.doc.add_feature("ProfileFeature", "Sketch")
             if name == "InsertSketch":
                 self.doc.in_sketch = not self.doc.in_sketch
+            if name == "AddComponent5":
+                return types.SimpleNamespace(Name2=args[0].split("\\")[-1] + "-1")
             if name == "CreateMassProperty":
                 return types.SimpleNamespace(Mass=0.4, Volume=5e-5, SurfaceArea=0.02)
             return 0 if name == "SaveAs3" else object()
@@ -149,3 +152,14 @@ def test_state_lists_the_feature_tree(skill):
     skill.run("sw.new_part()\nsw.start_sketch('top')\nsw.circle(0, 0, 10)\nsw.finish_sketch()\nsw.extrude(5)")
     state = skill.state()
     assert "Active document: Part1" in state and "Sketch1 (ProfileFeature)" in state
+
+
+def test_hole_patterns_put_holes_in_the_right_places(skill):
+    r = skill.run("sw.new_part()\nsw.start_sketch('front')\nsw.circle(0, 0, 60)\nsw.finish_sketch()\n"
+                  "sw.extrude(12)\nsw.bolt_circle((0, 42, 12), pcd=90, count=4, diameter=9)")
+    assert r.ok, r.error
+    circles = [a for n, a in skill.app.ActiveDoc.calls if n == "CreateCircleByRadius"][1:]
+    assert len(circles) == 4
+    assert circles[0][:2] == pytest.approx((0.045, 0.0)) and circles[1][:2] == pytest.approx((0.0, 0.045), abs=1e-12)
+    assert all(c[3] == pytest.approx(0.0045) for c in circles)
+    assert "4 hole(s) of 9 mm" in r.output

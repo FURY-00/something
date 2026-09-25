@@ -29,6 +29,7 @@ SKILL_CLASSES = {
     "comsol": "jarvis.skills.comsol:ComsolSkill",
     "ansys": "jarvis.skills.ansys:AnsysSkill",
     "canva": "jarvis.skills.canva:CanvaSkill",
+    "calc": "jarvis.skills.calc:CalcSkill",
 }
 
 

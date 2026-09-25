@@ -46,8 +46,8 @@ def words(text: str) -> list[str]:
     return [w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 1 and w not in STOPWORDS]
 
 
-def load_guide(name: str) -> tuple[str, list[Section]]:
-    path = GUIDES_DIR / f"{name}.md"
+def load_guide(name: str, folder: Path = GUIDES_DIR) -> tuple[str, list[Section]]:
+    path = folder / f"{name}.md"
     if not path.exists():
         return "", []
     text = path.read_text(encoding="utf-8")
@@ -93,3 +93,22 @@ def teaching_guide(name: str, question: str, limit: int = 2) -> str:
 
 def available_guides() -> list[str]:
     return sorted(p.stem for p in GUIDES_DIR.glob("*.md"))
+
+
+KNOWLEDGE_DIR = Path(__file__).resolve().parent.parent / "knowledge"
+
+
+def knowledge_subjects() -> list[str]:
+    return sorted(p.stem for p in KNOWLEDGE_DIR.glob("*.md"))
+
+
+def search_knowledge(query: str, limit: int = 3) -> str:
+    """The most relevant sections of the engineering study notes."""
+    pool = []
+    for subject in knowledge_subjects():
+        intro, sections = load_guide(subject, KNOWLEDGE_DIR)
+        title = intro.splitlines()[0].lstrip("# ") if intro else subject
+        for s in sections:
+            pool.append(Section(f"{title}: {s.heading}", s.body))
+    ranked = sorted(pool, key=lambda s: score(s, query), reverse=True)
+    return "\n".join(s.text() for s in ranked[:limit] if score(s, query) > 0)
