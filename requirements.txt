@@ -23,6 +23,10 @@ pyautogui
 pyperclip
 python-docx
 
+# Engineering calculator
+sympy
+matplotlib
+
 # Documents and websites
 pypdf
 python-pptx

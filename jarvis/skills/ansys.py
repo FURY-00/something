@@ -50,6 +50,112 @@ class AnsysHelpers:
         print(f"{analysis} solution finished")
         return out
 
+    def buckling(self, modes: int = 3) -> list[float]:
+        """Eigenvalue buckling: load factors (critical load = factor x applied load)."""
+        m = self.mapdl
+        m.finish()
+        m.run("/SOLU")
+        m.antype("STATIC")
+        m.pstres("ON")
+        m.solve()
+        m.finish()
+        m.run("/SOLU")
+        m.antype("BUCKLE")
+        m.bucopt("LANB", modes)
+        m.mxpand(modes)
+        m.solve()
+        m.finish()
+        m.post1()
+        factors = []
+        for i in range(1, modes + 1):
+            try:
+                factors.append(float(m.get_value("MODE", i, "FREQ")))
+            except Exception:  # noqa: BLE001
+                break
+        print("Buckling load factors: " + ", ".join(f"{f:.4g}" for f in factors))
+        return factors
+
+    def transient(self, end_time: float, step: float, initial_temperature: float | None = None) -> str:
+        """Transient (thermal or structural) solution from 0 to end_time in steps of `step` s."""
+        m = self.mapdl
+        m.finish()
+        m.run("/SOLU")
+        m.antype("TRANS")
+        if initial_temperature is not None:
+            m.ic("ALL", "TEMP", initial_temperature)
+        m.time(end_time)
+        m.deltim(step, step / 10, step * 10)
+        m.kbc(1)
+        m.outres("ALL", "ALL")
+        out = m.solve()
+        m.finish()
+        print(f"Transient solution to t = {end_time} s finished")
+        return out
+
+    def harmonic(self, f_min: float, f_max: float, steps: int = 50, damping_ratio: float = 0.02) -> str:
+        """Harmonic response between f_min and f_max Hz (loads are sinusoidal amplitudes)."""
+        m = self.mapdl
+        m.finish()
+        m.run("/SOLU")
+        m.antype("HARMIC")
+        m.harfrq(f_min, f_max)
+        m.nsubst(steps)
+        m.kbc(1)
+        m.dmprat(damping_ratio)
+        out = m.solve()
+        m.finish()
+        print(f"Harmonic response {f_min}-{f_max} Hz finished ({steps} steps)")
+        return out
+
+    def reactions(self) -> dict:
+        """Total reaction forces (N) at the supports."""
+        m = self._post()
+        m.allsel()
+        m.fsum()
+        forces = {c: float(m.get_value("FSUM", 0, "ITEM", c)) for c in ("FX", "FY", "FZ")}
+        print("Reactions: " + ", ".join(f"{k} = {v:.4g} N" for k, v in forces.items()))
+        return forces
+
+    def truss(self, nodes, members, area: float, E: float = 200e9, nu: float = 0.3,
+              supports=None, loads=None) -> list[float]:
+        """Build and solve a pin-jointed truss with LINK180 elements.
+
+        nodes: [(x, y) or (x, y, z), ...] in m; members: [(i, j), ...] 0-based node indices;
+        supports: {node: "xy" | "y" | "xyz" ...} fixed directions; loads: {node: (fx, fy[, fz])} N.
+        Returns the axial force in each member (tension positive).
+        """
+        m = self.mapdl
+        self.new("Truss")
+        m.et(1, "LINK180")
+        m.mp("EX", 1, E)
+        m.mp("PRXY", 1, nu)
+        m.sectype(1, "LINK")
+        m.secdata(area)
+        planar = all(len(n) == 2 or n[2] == 0 for n in nodes)
+        for i, n in enumerate(nodes, 1):
+            m.n(i, *(list(n) + [0] * (3 - len(n))))
+        for i, j in members:
+            m.e(i + 1, j + 1)
+        for node, dirs in (supports or {}).items():
+            for d in dirs.lower():
+                m.d(node + 1, "U" + d.upper(), 0)
+        if planar:
+            m.d("ALL", "UZ", 0)  # keep a 2D truss in its plane
+        for node, force in (loads or {}).items():
+            for comp, value in zip(("FX", "FY", "FZ"), force):
+                if value:
+                    m.f(node + 1, comp, value)
+        self.solve("STATIC")
+        m.post1()
+        m.set("LAST")
+        m.etable("AXF", "SMISC", 1)
+        forces = []
+        for e in range(1, len(members) + 1):
+            forces.append(float(m.get_value("ELEM", e, "ETAB", "AXF")))
+        for (i, j), f in zip(members, forces):
+            print(f"Member {i}-{j}: {f / 1e3:+.3f} kN ({'tension' if f >= 0 else 'compression'})")
+        return forces
+
     def _post(self):
         m = self.mapdl
         m.post1()

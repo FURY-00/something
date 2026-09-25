@@ -7,7 +7,7 @@ import logging
 
 from . import tool
 from ..skills import get_skill
-from ..skills.guides import available_guides, teaching_guide
+from ..skills.guides import available_guides, knowledge_subjects, search_knowledge, teaching_guide
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +40,10 @@ def _handle_markers(ctx, skill, output: str) -> str:
                 log.debug("bad background marker %r: %s", line, exc)
         elif line.strip() == "JARVIS_SHOW_BLENDER" and hasattr(skill, "show"):
             kept.append(skill.show())
+        elif line.startswith("JARVIS_OPEN "):
+            from .system import open_with_default_app
+
+            open_with_default_app(line[len("JARVIS_OPEN "):].strip())
         else:
             kept.append(line)
     return "\n".join(kept).strip()
@@ -69,7 +73,7 @@ def run_app_task(ctx, name: str, task: str, in_background: bool = False) -> str:
             + (" " + job.result.splitlines()[0][:150] if job.result else ""),
         )
         return f"Started in {skill.title} in the background. I'll say when it's finished."
-    ctx.say(f"Working on it in {skill.title}.")
+    ctx.say("Let me work that out." if name == "calc" else f"Working on it in {skill.title}.")
     ok, text = work()
     return ("Success. Output:\n" if ok else "") + text
 
@@ -82,24 +86,27 @@ def blender(ctx, task: str, in_background: bool = False) -> str:
 
 
 @tool("Do work in SolidWorks: sketches (lines, circles, rectangles, arcs, polygons, slots), "
-      "features (extrude, cut, revolve, fillet, chamfer, shell, planes, holes), editing dimensions, "
-      "materials, mass properties, saving and exporting (STEP, STL, PDF). Lengths in mm.",
+      "features (extrude, cut, revolve, fillet, chamfer, shell, planes, holes, bolt circles, hole grids), "
+      "editing dimensions, equations, materials, mass properties, assemblies with mates, 3-view "
+      "drawings, saving and exporting (STEP, STL, PDF). Lengths in mm.",
       {"task": TASK_PARAM, "in_background": BACKGROUND_PARAM}, available=_enabled("solidworks"))
 def solidworks(ctx, task: str, in_background: bool = False) -> str:
     return run_app_task(ctx, "solidworks", task, in_background)
 
 
 @tool("Do work in COMSOL Multiphysics: build models (1D/2D/3D geometry, materials, physics such "
-      "as pipe flow, laminar flow, heat transfer, solid mechanics, electric currents), mesh, "
-      "solve, evaluate results, plot and save.",
+      "as pipe flow, laminar flow, heat transfer with convection, solid mechanics, electric currents), "
+      "stationary, transient, eigenfrequency and frequency studies, parametric sweeps, mesh, solve, "
+      "evaluate results, plot and save.",
       {"task": TASK_PARAM, "in_background": BACKGROUND_PARAM}, available=_enabled("comsol"))
 def comsol(ctx, task: str, in_background: bool = False) -> str:
     return run_app_task(ctx, "comsol", task, in_background)
 
 
 @tool("Do work in Ansys Mechanical APDL: structural, thermal and modal analyses with beams, "
-      "trusses, pipes, 1D heat conduction, 2D and 3D solids; loads, supports, meshing, solving "
-      "and results (displacement, stress, temperature, frequencies).",
+      "trusses, pipes, 1D heat conduction, 2D, axisymmetric and 3D solids; static, modal, buckling, "
+      "transient and harmonic analyses; loads, supports, meshing, solving and results "
+      "(displacement, stress, reactions, temperature, frequencies, buckling loads).",
       {"task": TASK_PARAM, "in_background": BACKGROUND_PARAM}, available=_enabled("ansys"))
 def ansys(ctx, task: str, in_background: bool = False) -> str:
     return run_app_task(ctx, "ansys", task, in_background)
@@ -115,7 +122,8 @@ def canva(ctx, task: str) -> str:
 
 @tool("Get step-by-step instructions to teach the user how to do something by hand in an "
       "application (which menus and buttons to click). Walk them through it one or two steps at a time.",
-      {"app": {"type": "string", "enum": available_guides(), "description": "Which application"},
+      {"app": {"type": "string", "enum": [g for g in available_guides() if g != "calc"],
+               "description": "Which application"},
        "question": {"type": "string", "description": "What the user wants to learn to do"}})
 def how_to(ctx, app: str, question: str) -> str:
     steps = teaching_guide(app, question)
@@ -177,3 +185,26 @@ def write_program(ctx, request: str, language: str, name: str, run: bool = False
 
     ctx.say("Writing the code.")
     return write(ctx, request, language, name, run)
+
+
+@tool("Solve an engineering, physics or maths problem exactly by writing and running a Python "
+      "calculation (numpy, scipy, sympy), optionally with a plot. Use it for ANY calculation "
+      "beyond trivial arithmetic: stresses, deflections, pressure drops, heat transfer, cycles, "
+      "vibrations, equation solving, derivations, unit conversions.",
+      {"problem": {"type": "string", "description": "The full problem with every given value and "
+                   "unit, what to find, and any assumptions or method the user wants"},
+       "plot": {"type": "boolean", "description": "Also draw a graph of the result"}},
+      available=_enabled("calc"))
+def solve_engineering(ctx, problem: str, plot: bool = False) -> str:
+    task = problem + ("\nAlso make a clear, labelled plot with save_plot()." if plot else "")
+    return run_app_task(ctx, "calc", task)
+
+
+@tool("Look up core concepts, key equations, typical values, intuition and common mistakes on a "
+      "mechanical engineering topic (" + ", ".join(s.replace("_", " ") for s in knowledge_subjects())
+      + ") to teach the user accurately or check a fact.",
+      {"topic": {"type": "string", "description": "The concept or question, e.g. 'Mohr circle', "
+                 "'why does fatigue happen', 'Rankine cycle efficiency'"}})
+def study_notes(ctx, topic: str) -> str:
+    notes = search_knowledge(topic)
+    return notes or "Nothing in the study notes on that; teach it from your own knowledge carefully."

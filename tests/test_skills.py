@@ -101,7 +101,7 @@ def test_every_guide_parses_and_has_teaching_steps():
     for name in available_guides():
         intro, sections = load_guide(name)
         assert intro and sections, name
-        if name != "canva":
+        if name not in ("canva", "calc"):
             assert any(s.kind == "gui" for s in sections), name
             assert any(s.kind == "recipe" for s in sections), name
 

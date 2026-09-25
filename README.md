@@ -11,8 +11,11 @@ what you worked on together, and does real work on your computer:
 - **Code**: writes Python, JavaScript, C and more; builds interactive **websites from your PDFs, PowerPoints and Word files**
 - Everyday tasks: apps, websites, Instagram Reels, typing, music, timers, documents, screenshots
 
-It can also **teach you**: "how do I set up 1D pipe flow in COMSOL?" and it walks you
-through the clicks one step at a time.
+It's also a **mechanical engineering tutor**. It explains core concepts (statics, strength of
+materials, dynamics and vibrations, thermodynamics, fluids, heat transfer, machine design,
+materials, FEA/CFD) with intuition, equations, worked examples and quick questions. It solves real
+problems by **writing and running Python** (numpy, scipy, sympy), so the numbers are computed, not
+guessed. And "how do I set up 1D pipe flow in COMSOL?" walks you through the clicks step by step.
 
 ```
  "Hey Jarvis, sketch a 50 mm equilateral triangle on the front plane and extrude it 10 mm"
@@ -168,6 +171,11 @@ Without the add-on, Jarvis works in the background and saves the scene in `Docum
 | "Write a Python script that plots the stress-strain curve from data.csv, and run it" | Writes, runs, fixes |
 | "Make a bouncing ball animation in Blender and render it" | Scene, animation, MP4 rendered in the background |
 | "How do I make a revolve in SolidWorks?" | Walks you through the clicks, step by step |
+| "Teach me Mohr's circle" / "Why do shafts fail in fatigue?" | A lesson: intuition, equation, example, then a question for you |
+| "A 2 m steel beam carries 5 kN at mid-span, 50 by 100 mm section. Stress and deflection?" | Writes and runs the calculation, explains each step |
+| "Plot the response of a spring-mass system with 10 percent damping" | Solves the ODE and opens the graph |
+| "Check this column for buckling in Ansys and compare with Euler" | Eigenvalue buckling vs hand formula |
+| "Make a flange with six M8 holes on a 90 mm bolt circle, then a PDF drawing" | Revolve/extrude, bolt circle, 3-view drawing |
 | Everyday: "Open Instagram Reels", "next", "Write a 250-word abstract on…", "Pause the music", "Remind me in 20 minutes" | Same as before |
 
 Long jobs (renders, big solves) run **in the background** ("I'll tell you when it's done") so you
@@ -183,6 +191,17 @@ python -m jarvis --check           # diagnose problems
 ```
 
 ---
+
+## How Jarvis knows engineering
+
+- **Study notes** in `jarvis/knowledge/*.md` cover the core of a mechanical engineering degree:
+  equations with units, typical values, intuition and common mistakes. Jarvis looks up the relevant
+  section before teaching, so formulas are right.
+- **The calculator** (`solve_engineering`) writes a Python script for each problem, runs it and reads
+  the answer, printing intermediate steps and a sanity check (a limiting case or a textbook formula).
+  Plots are saved in `Documents/Jarvis/Projects/calculations/`.
+- For the hardest problems (multi-step design, unusual physics), the Claude brain reasons far better
+  than a local model. Still check anything safety-critical yourself.
 
 ## How Jarvis knows these programs
 

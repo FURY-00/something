@@ -64,10 +64,15 @@ def test_comsol_session_and_current_model(comsol):
 
 def test_every_comsol_recipe_runs(comsol, tmp_path):
     assert len(recipes("comsol")) >= 2
+    outputs = []
     for heading, block in recipes("comsol"):
         r = comsol.run(block)
         assert r.ok, f"{heading}:\n{r.error}"
-    assert "max velocity: 0.1 m/s" in r.output
+        outputs.append(r.output)
+    joined = "\n".join(outputs)
+    assert "max velocity: 0.1 m/s" in joined
+    assert "beam theory f1 = 45.3 Hz" in joined            # 1.875^2/(2 pi) sqrt(E h^2 / (12 rho L^4))
+    assert "Material Steel (mat1)" in joined and "Study std1: Eigenfrequency {'neigs': 4}" in joined
     assert (tmp_path / "comsol").exists()
 
 
@@ -78,6 +83,7 @@ def ansys(monkeypatch, tmp_path):
     pp.nodal_displacement.return_value = np.array([0.0, -0.001, -0.0025])
     pp.nodal_eqv_stress.return_value = np.array([1e6, 3e8])
     pp.nodal_temperature.return_value = np.linspace(100, 20, 21)
+    pp.nodal_component_stress.return_value = np.array([80e6, 83.3e6])
     mapdl.get_value.return_value = 42.0
     core = types.ModuleType("ansys.mapdl.core")
     core.launch_mapdl = mock.MagicMock(return_value=mapdl)
@@ -104,6 +110,10 @@ def test_every_ansys_recipe_runs_and_reports_results(ansys):
     assert "Max displacement (Y): 0.0025 m" in joined
     assert "Theory F L^3 / 3EI" in joined and "Max von Mises stress: 300 MPa" in joined
     assert "Temperature range: 20 to 100" in joined
+    assert "Member 0-1: +0.042 kN" in joined and "Reactions: FX = 42 N" in joined        # truss helper
+    assert "Buckling load factors: 42, 42, 42" in joined and "Euler P_cr" in joined
+    assert "Lame 83.3 MPa" in joined                                                   # p (ro^2+ri^2)/(ro^2-ri^2)
+    assert "lumped T(600 s)" in joined
     ansys.fake.antype.assert_any_call("STATIC")
 
 
